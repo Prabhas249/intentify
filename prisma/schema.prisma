@@ -1,0 +1,277 @@
+// Prisma Schema for Smart Popup Tool
+// Database: PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// NextAuth.js Models
+// ============================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// User & Subscription Models
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  company       String?
+
+  // Subscription
+  plan                  Plan      @default(FREE)
+  razorpayCustomerId    String?
+  visitorsUsedThisMonth Int       @default(0)
+  billingCycleStart     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  websites      Website[]
+  subscriptions Subscription[]
+}
+
+enum Plan {
+  FREE
+  STARTER
+  GROWTH
+  PRO
+}
+
+model Subscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  razorpaySubscriptionId String  @unique
+  plan                  Plan
+  status                SubscriptionStatus
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  TRIALING
+}
+
+// ============================================
+// Website & Campaign Models
+// ============================================
+
+model Website {
+  id        String   @id @default(cuid())
+  userId    String
+  domain    String
+  scriptKey String   @unique @default(cuid())
+  settings  Json     @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+  visitors  Visitor[]
+
+  @@unique([userId, domain])
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  websiteId    String
+  name         String
+  popupType    PopupType      @default(MODAL)
+  triggerRules Json           // Conditions for showing popup
+  content      Json           // Popup content (title, text, CTA, styles)
+  status       CampaignStatus @default(ACTIVE)
+  priority     Int            @default(5) // 1-10, higher = more priority
+
+  // Frequency settings
+  frequency    FrequencyType  @default(ONCE_PER_SESSION)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  events  Event[]
+}
+
+enum PopupType {
+  MODAL
+  SLIDE_IN
+  BANNER
+  FLOATING
+  FULL_SCREEN
+  BOTTOM_SHEET
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum FrequencyType {
+  EVERY_TIME
+  ONCE_PER_SESSION
+  ONCE_PER_DAY
+  ONCE_PER_WEEK
+  ONCE_EVER
+}
+
+// ============================================
+// Visitor & Analytics Models
+// ============================================
+
+model Visitor {
+  id          String   @id @default(cuid())
+  websiteId   String
+  visitorHash String   // Anonymous identifier (cookie-based)
+
+  // Behavior data
+  visitCount        Int      @default(1)
+  pagesViewed       String[] @default([])
+  timeOnSiteSeconds Int      @default(0)
+
+  // Attribution
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  referrer    String?
+
+  // Intent scoring
+  intentScore Int         @default(0) // 0-100
+  intentLevel IntentLevel @default(LOW)
+
+  // Scroll depth (max percentage 0-100)
+  scrollDepth Int @default(0)
+
+  // Device info
+  device      String?
+  browser     String?
+  os          String?
+  country     String?
+  city        String?
+
+  // Timestamps
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+
+  // For billing - track if counted this month
+  countedForMonth DateTime?
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  events  Event[]
+
+  @@unique([websiteId, visitorHash])
+  @@index([websiteId, lastSeen])
+  @@index([websiteId, intentLevel])
+}
+
+enum IntentLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Event {
+  id         String    @id @default(cuid())
+  campaignId String?
+  visitorId  String
+  eventType  EventType
+  metadata   Json?     // Additional event data
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  visitor  Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, eventType])
+  @@index([visitorId, createdAt])
+}
+
+enum EventType {
+  PAGE_VIEW
+  POPUP_IMPRESSION
+  POPUP_CLICK
+  POPUP_CONVERSION
+  POPUP_DISMISS
+  LEAD_CAPTURED
+}
+
+// ============================================
+// Lead Collection Model
+// ============================================
+
+model Lead {
+  id        String   @id @default(cuid())
+  websiteId String
+
+  // Contact info
+  email     String?
+  phone     String?  // WhatsApp number
+  name      String?
+
+  // Source
+  campaignId String?
+  utmSource  String?
+  pageUrl    String?
+
+  // Metadata
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([websiteId, createdAt])
+}
