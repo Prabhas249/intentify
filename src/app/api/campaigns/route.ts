@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getPlanLimits } from "@/lib/utils";
 
 // GET /api/campaigns - List campaigns (optionally filter by website)
 export async function GET(req: NextRequest) {
@@ -90,6 +91,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate popupType
+    const validPopupTypes = ["MODAL", "SLIDE_IN", "BANNER", "FLOATING", "FULL_SCREEN", "BOTTOM_SHEET"];
+    if (popupType && !validPopupTypes.includes(popupType)) {
+      return NextResponse.json(
+        { error: `Invalid popup type. Must be one of: ${validPopupTypes.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate frequency
+    const validFrequencies = ["EVERY_TIME", "ONCE_PER_SESSION", "ONCE_PER_DAY", "ONCE_PER_WEEK", "ONCE_EVER"];
+    if (frequency && !validFrequencies.includes(frequency)) {
+      return NextResponse.json(
+        { error: `Invalid frequency. Must be one of: ${validFrequencies.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate priority (1-100)
+    if (priority !== undefined) {
+      const priorityNum = Number(priority);
+      if (isNaN(priorityNum) || priorityNum < 1 || priorityNum > 100) {
+        return NextResponse.json(
+          { error: "Priority must be a number between 1 and 100" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate name length
+    if (name.length > 100) {
+      return NextResponse.json(
+        { error: "Campaign name must be less than 100 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Validate CTA link to prevent XSS
+    if (content?.ctaLink) {
+      const ctaLink = String(content.ctaLink).toLowerCase();
+      if (ctaLink.startsWith("javascript:") || ctaLink.startsWith("data:") || ctaLink.startsWith("vbscript:")) {
+        return NextResponse.json(
+          { error: "Invalid CTA link. JavaScript URLs are not allowed." },
+          { status: 400 }
+        );
+      }
+    }
+
     // Verify website ownership
     const website = await db.website.findFirst({
       where: {
@@ -122,20 +171,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Check plan limits for campaigns
-    const planLimits = {
-      FREE: 1,
-      STARTER: 3,
-      GROWTH: 10,
-      PRO: Infinity,
-    };
-
-    const campaignLimit = planLimits[website.user.plan];
+    const limits = getPlanLimits(website.user.plan);
     const currentCampaigns = website._count.campaigns;
 
-    if (currentCampaigns >= campaignLimit) {
+    if (currentCampaigns >= limits.campaigns) {
+      const limitDisplay = limits.campaigns === Infinity ? "unlimited" : limits.campaigns.toString();
       return NextResponse.json(
         {
-          error: `Campaign limit reached. Your ${website.user.plan} plan allows ${campaignLimit} campaigns. Please upgrade to add more.`,
+          error: `Campaign limit reached. Your ${website.user.plan} plan allows ${limitDisplay} campaigns. Please upgrade to add more.`,
         },
         { status: 403 }
       );

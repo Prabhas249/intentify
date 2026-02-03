@@ -1,157 +1,297 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Globe, Users, Megaphone, TrendingUp, Plus } from "lucide-react";
-import Link from "next/link";
+import { DashboardContent } from "@/components/dashboard/dashboard-content";
+import { formatTimeAgo } from "@/lib/utils";
+import { headers } from "next/headers";
+import type { Metadata } from "next";
 
-export default async function DashboardPage() {
+export const metadata: Metadata = {
+  title: "Dashboard | Intentify",
+  description: "View your popup performance, visitor stats, and conversion rates.",
+};
+
+// Demo user IDs for public dashboard (geo-based)
+const DEMO_USER_INR = "cml66aybb0000yefsjavxkfb5"; // India users
+const DEMO_USER_USD = "cml66hzz280fsyefsv71bm5ed"; // Global users
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ website?: string; period?: string }>;
+}) {
   const session = await auth();
+  const headersList = await headers();
 
-  // Get user stats
-  const [websiteCount, campaignCount, visitorCount] = await Promise.all([
-    db.website.count({ where: { userId: session?.user?.id } }),
-    db.campaign.count({
-      where: { website: { userId: session?.user?.id } },
+  // Detect country from Vercel header (or default to USD for non-Vercel)
+  const country = headersList.get("x-vercel-ip-country") || "US";
+  const isIndia = country === "IN";
+
+  // Use demo user if not logged in (geo-based)
+  const demoUserId = isIndia ? DEMO_USER_INR : DEMO_USER_USD;
+  const userId = session?.user?.id || demoUserId;
+
+  const params = await searchParams;
+  const period = params.period || "30d";
+
+  // Get user's websites
+  const websites = await db.website.findMany({
+    where: { userId: userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // If no website param, show all websites (null means all)
+  const selectedWebsiteId = params.website || null;
+
+  // Calculate date range
+  const now = new Date();
+  const periodDays = period === "24h" ? 1 : period === "7d" ? 7 : period === "30d" ? 30 : 90;
+  const startDate = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
+
+  // Build where clause for website filtering
+  const websiteWhere = selectedWebsiteId
+    ? { websiteId: selectedWebsiteId }
+    : { website: { userId: userId } };
+
+  const visitorWhere = selectedWebsiteId
+    ? { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } }
+    : { website: { userId: userId }, lastSeen: { gte: startDate } };
+
+  // Get stats with period and website filtering
+  const [websiteCount, campaignCount, visitorCount, totalImpressions, totalConversions, recentEvents, chartEvents] = await Promise.all([
+    db.website.count({ where: { userId: userId } }),
+    selectedWebsiteId
+      ? db.campaign.count({ where: { websiteId: selectedWebsiteId } })
+      : db.campaign.count({ where: { website: { userId: userId } } }),
+    db.visitor.count({ where: visitorWhere }),
+    // Get popup impressions for conversion rate
+    db.event.count({
+      where: {
+        visitor: websiteWhere,
+        eventType: "POPUP_IMPRESSION",
+        createdAt: { gte: startDate },
+      },
     }),
-    db.visitor.count({
-      where: { website: { userId: session?.user?.id } },
+    // Get popup conversions for conversion rate
+    db.event.count({
+      where: {
+        visitor: websiteWhere,
+        eventType: "POPUP_CONVERSION",
+        createdAt: { gte: startDate },
+      },
+    }),
+    // Get recent real events
+    db.event.findMany({
+      where: {
+        visitor: websiteWhere,
+        createdAt: { gte: startDate },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      include: {
+        visitor: {
+          select: {
+            utmSource: true,
+            device: true,
+          },
+        },
+        campaign: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    }),
+    // Get events for chart grouped by day
+    db.event.findMany({
+      where: {
+        visitor: websiteWhere,
+        createdAt: { gte: startDate },
+        eventType: { in: ["POPUP_IMPRESSION", "POPUP_CONVERSION"] },
+      },
+      select: {
+        eventType: true,
+        createdAt: true,
+      },
     }),
   ]);
+
+  // Also get visitors for chart - use lastSeen to match stat card
+  const chartVisitors = await db.visitor.findMany({
+    where: visitorWhere,
+    select: {
+      lastSeen: true,
+    },
+  });
+
+  // Build chart data - use hours for 24h, days otherwise
+  // Use UTC consistently to avoid timezone mismatches
+  const chartDataMap = new Map<string, { visitors: number; impressions: number; conversions: number }>();
+  const is24h = period === "24h";
+
+  // Helper to get UTC-based key
+  const getTimeKey = (date: Date): string => {
+    if (is24h) {
+      return date.toISOString().slice(0, 13); // "2024-01-31T14" (UTC hour)
+    }
+    return date.toISOString().split("T")[0]; // "2024-01-31" (UTC date)
+  };
+
+  // Helper to get display label from key
+  const getDisplayLabel = (key: string): string => {
+    if (is24h) {
+      const hour = parseInt(key.slice(11, 13));
+      const ampm = hour >= 12 ? "pm" : "am";
+      const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      return `${hour12}${ampm}`;
+    } else {
+      const d = new Date(key + "T12:00:00Z");
+      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      return periodDays <= 7
+        ? dayNames[d.getUTCDay()]
+        : `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+    }
+  };
+
+  if (is24h) {
+    // For 24h, group by hour (show last 24 hours)
+    for (let i = 24; i >= 0; i--) {
+      const date = new Date(now.getTime() - i * 60 * 60 * 1000);
+      chartDataMap.set(getTimeKey(date), { visitors: 0, impressions: 0, conversions: 0 });
+    }
+  } else {
+    // For other periods, group by day (include full range from startDate)
+    for (let i = periodDays; i >= 0; i--) {
+      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      chartDataMap.set(getTimeKey(date), { visitors: 0, impressions: 0, conversions: 0 });
+    }
+  }
+
+  // Count visitors per time bucket (use lastSeen to match stat card)
+  chartVisitors.forEach((v) => {
+    const key = getTimeKey(new Date(v.lastSeen));
+    const data = chartDataMap.get(key);
+    if (data) {
+      data.visitors++;
+    }
+  });
+
+  // Count events per time bucket
+  chartEvents.forEach((e) => {
+    const key = getTimeKey(new Date(e.createdAt));
+    const data = chartDataMap.get(key);
+    if (data) {
+      if (e.eventType === "POPUP_IMPRESSION") {
+        data.impressions++;
+      } else if (e.eventType === "POPUP_CONVERSION") {
+        data.conversions++;
+      }
+    }
+  });
+
+  // Convert to array sorted by time
+  const chartData = Array.from(chartDataMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, data]) => ({
+      name: getDisplayLabel(key),
+      ...data,
+    }));
+
+  // Calculate real conversion rate
+  const conversionRate = totalImpressions > 0
+    ? ((totalConversions / totalImpressions) * 100).toFixed(1)
+    : "0";
 
   const stats = [
     {
       title: "Websites",
       value: websiteCount,
-      icon: Globe,
+      icon: "Globe",
       href: "/websites",
-      color: "text-blue-500",
+      gradient: "from-sky-500/20 to-sky-600/5",
+      iconColor: "text-sky-500",
+      borderColor: "border-sky-500/20",
     },
     {
       title: "Campaigns",
       value: campaignCount,
-      icon: Megaphone,
+      icon: "Megaphone",
       href: "/campaigns",
-      color: "text-purple-500",
+      gradient: "from-violet-500/20 to-violet-600/5",
+      iconColor: "text-violet-500",
+      borderColor: "border-violet-500/20",
     },
     {
       title: "Visitors Tracked",
       value: visitorCount,
-      icon: Users,
+      icon: "Users",
       href: "/visitors",
-      color: "text-green-500",
+      gradient: "from-emerald-500/20 to-emerald-600/5",
+      iconColor: "text-emerald-500",
+      borderColor: "border-emerald-500/20",
     },
     {
       title: "Conversion Rate",
-      value: "0%",
-      icon: TrendingUp,
+      value: `${conversionRate}%`,
+      icon: "TrendingUp",
       href: "/analytics",
-      color: "text-orange-500",
+      gradient: "from-amber-500/20 to-amber-600/5",
+      iconColor: "text-amber-500",
+      borderColor: "border-amber-500/20",
     },
   ];
 
+  // Format recent events for display
+  const formattedEvents = recentEvents.map((event) => {
+    const eventMessages: Record<string, string> = {
+      PAGE_VIEW: `Page viewed${event.visitor.utmSource ? ` from ${event.visitor.utmSource}` : ""}`,
+      POPUP_IMPRESSION: `${event.campaign?.name || "Popup"} shown`,
+      POPUP_CLICK: `${event.campaign?.name || "Popup"} CTA clicked`,
+      POPUP_CONVERSION: `Conversion on ${event.campaign?.name || "popup"}`,
+      POPUP_DISMISS: `${event.campaign?.name || "Popup"} dismissed`,
+      COUPON_COPY: "Coupon code copied",
+      PURCHASE_CONVERSION: "Purchase completed",
+    };
+
+    const eventIcons: Record<string, string> = {
+      PAGE_VIEW: "Users",
+      POPUP_IMPRESSION: "Eye",
+      POPUP_CLICK: "MousePointerClick",
+      POPUP_CONVERSION: "Zap",
+      POPUP_DISMISS: "X",
+      COUPON_COPY: "Copy",
+      PURCHASE_CONVERSION: "IndianRupee",
+    };
+
+    const eventTypes: Record<string, string> = {
+      PAGE_VIEW: "visitor",
+      POPUP_IMPRESSION: "impression",
+      POPUP_CLICK: "click",
+      POPUP_CONVERSION: "conversion",
+      POPUP_DISMISS: "dismiss",
+      COUPON_COPY: "click",
+      PURCHASE_CONVERSION: "conversion",
+    };
+
+    return {
+      id: event.id,
+      type: eventTypes[event.eventType] || "visitor",
+      message: eventMessages[event.eventType] || event.eventType,
+      time: formatTimeAgo(event.createdAt),
+      icon: eventIcons[event.eventType] || "Activity",
+    };
+  });
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight">
-            Welcome back, {session?.user?.name?.split(" ")[0] || "there"}!
-          </h1>
-          <p className="text-xl text-muted-foreground">
-            Here&apos;s what&apos;s happening with your popups today.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/websites/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Website
-          </Link>
-        </Button>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium leading-none text-muted-foreground">
-                {stat.title}
-              </CardTitle>
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tracking-tight">{stat.value}</div>
-              <Link
-                href={stat.href}
-                className="text-xs text-muted-foreground hover:underline"
-              >
-                View all &rarr;
-              </Link>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Quick Start */}
-      {websiteCount === 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Get Started</CardTitle>
-            <CardDescription>
-              Add your first website to start tracking visitors and showing smart
-              popups.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start gap-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                1
-              </div>
-              <div>
-                <h4 className="text-xl font-semibold tracking-tight">Add your website</h4>
-                <p className="leading-7 text-muted-foreground">
-                  Enter your domain to get a unique tracking script.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                2
-              </div>
-              <div>
-                <h4 className="text-xl font-semibold tracking-tight">Install the script</h4>
-                <p className="leading-7 text-muted-foreground">
-                  Copy and paste one line of code into your website.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                3
-              </div>
-              <div>
-                <h4 className="text-xl font-semibold tracking-tight">Create your first popup</h4>
-                <p className="leading-7 text-muted-foreground">
-                  Design a popup and set smart triggers based on visitor behavior.
-                </p>
-              </div>
-            </div>
-            <Button asChild className="mt-4">
-              <Link href="/websites/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Your First Website
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+    <DashboardContent
+      userName={session?.user?.name?.split(" ")[0] || "there"}
+      stats={stats}
+      websiteCount={websiteCount}
+      websites={websites.map((w) => ({ id: w.id, domain: w.domain }))}
+      selectedWebsiteId={selectedWebsiteId}
+      period={period}
+      recentEvents={formattedEvents}
+      chartData={chartData}
+      conversionRate={conversionRate}
+    />
   );
 }

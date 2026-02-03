@@ -12,6 +12,8 @@ interface PopupContent {
   whatsappNumber: string;
   whatsappMessage: string;
   imageUrl: string;
+  showCoupon?: boolean;
+  couponCode?: string;
   showEmailField: boolean;
   showPhoneField: boolean;
   emailPlaceholder: string;
@@ -139,6 +141,27 @@ export function PopupPreview({ content, popupType, device }: PopupPreviewProps) 
                 <p className="text-sm opacity-60 mb-4">{content.body}</p>
               )}
 
+              {/* Coupon Code */}
+              {content.showCoupon && content.couponCode && (
+                <div
+                  className="flex items-center justify-between px-4 py-3 rounded-lg mb-4"
+                  style={{
+                    backgroundColor: `${styles.textColor}10`,
+                    border: `2px dashed ${styles.textColor}30`,
+                  }}
+                >
+                  <span
+                    className="font-mono font-bold tracking-wider"
+                    style={{ color: styles.textColor }}
+                  >
+                    {content.couponCode}
+                  </span>
+                  <span className="text-xs" style={{ color: styles.accentColor }}>
+                    📋 Copy
+                  </span>
+                </div>
+              )}
+
               {/* Form fields */}
               <div className="space-y-2 mb-4">
                 {content.showEmailField && (
@@ -194,6 +217,23 @@ export function PopupPreview({ content, popupType, device }: PopupPreviewProps) 
           <div className="p-4">
             <h3 className="text-base font-bold mb-1">{content.headline}</h3>
             <p className="text-sm opacity-80 mb-3">{content.subheadline}</p>
+
+            {content.showCoupon && content.couponCode && (
+              <div
+                className="flex items-center justify-between px-3 py-2 rounded-md mb-3"
+                style={{
+                  backgroundColor: `${styles.textColor}10`,
+                  border: `2px dashed ${styles.textColor}30`,
+                }}
+              >
+                <span className="font-mono font-bold text-sm tracking-wider">
+                  {content.couponCode}
+                </span>
+                <span className="text-xs" style={{ color: styles.accentColor }}>
+                  📋
+                </span>
+              </div>
+            )}
 
             {content.showEmailField && (
               <input
@@ -291,6 +331,23 @@ export function PopupPreview({ content, popupType, device }: PopupPreviewProps) 
             <div className="px-6 pb-6">
               <h2 className="text-lg font-bold mb-1">{content.headline}</h2>
               <p className="text-sm opacity-80 mb-4">{content.subheadline}</p>
+
+              {content.showCoupon && content.couponCode && (
+                <div
+                  className="flex items-center justify-between px-4 py-3 rounded-lg mb-4"
+                  style={{
+                    backgroundColor: `${styles.textColor}10`,
+                    border: `2px dashed ${styles.textColor}30`,
+                  }}
+                >
+                  <span className="font-mono font-bold tracking-wider">
+                    {content.couponCode}
+                  </span>
+                  <span className="text-xs" style={{ color: styles.accentColor }}>
+                    📋 Copy
+                  </span>
+                </div>
+              )}
 
               <div className="space-y-2 mb-4">
                 {content.showEmailField && (

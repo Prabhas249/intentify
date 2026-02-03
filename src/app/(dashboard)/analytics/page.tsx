@@ -1,30 +1,14 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { headers } from "next/headers";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Analytics | PopupTool",
+  description: "Detailed analytics on visitors, conversions, traffic sources, and campaign performance.",
+};
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Users,
   Eye,
@@ -38,11 +22,27 @@ import {
   MapPin,
   Laptop,
   MousePointerClick,
+  Plus,
+  BarChart3,
+  Zap,
+  IndianRupee,
+  Copy,
 } from "lucide-react";
 import Link from "next/link";
 import { WebsiteSelector } from "@/components/analytics/website-selector";
+import { PeriodSelector } from "@/components/analytics/period-selector";
 import { NewVsReturningChart } from "@/components/analytics/new-vs-returning-chart";
 import { ConversionPathView } from "@/components/analytics/conversion-path";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { GlassCard, GlassCardContent, GlassCardHeader } from "@/components/dashboard/glass-card";
+import { StatCard } from "@/components/dashboard/stat-card";
+import { PrimaryButton } from "@/components/dashboard/primary-button";
+import { BlurFade } from "@/components/landing/ui/blur-fade";
+import { cn, formatTimeAgo } from "@/lib/utils";
+
+// Demo user IDs (geo-based)
+const DEMO_USER_INR = "cml66aybb0000yefsjavxkfb5";
+const DEMO_USER_USD = "cml66hzz280fsyefsv71bm5ed";
 
 export default async function AnalyticsPage({
   searchParams,
@@ -50,34 +50,49 @@ export default async function AnalyticsPage({
   searchParams: Promise<{ website?: string; period?: string }>;
 }) {
   const session = await auth();
+  const headersList = await headers();
+  const country = headersList.get("x-vercel-ip-country") || "US";
+  const isIndia = country === "IN";
+  const demoUserId = isIndia ? DEMO_USER_INR : DEMO_USER_USD;
 
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  // Use demo user if not logged in
+  const userId = session?.user?.id || demoUserId;
 
   const params = await searchParams;
-  const period = params.period || "7d";
+  const period = params.period || "30d";
 
   // Get user's websites
   const websites = await db.website.findMany({
-    where: { userId: session.user.id },
+    where: { userId: userId },
     orderBy: { createdAt: "desc" },
   });
 
   if (websites.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <Globe className="h-12 w-12 text-muted-foreground mb-4" />
-        <h2 className="text-2xl font-semibold tracking-tight mb-2">No websites yet</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Add a website to start tracking visitors and see analytics.
-        </p>
-        <Link
-          href="/websites/new"
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Add Website
-        </Link>
+      <div className="space-y-8">
+        <PageHeader
+          title="Analytics"
+          description="Track visitor behavior and popup performance."
+          iconSlot={<BarChart3 className="h-8 w-8 md:h-9 md:w-9 text-amber-500" />}
+          badge="Insights"
+        />
+        <GlassCard delay={0.1} gradient="from-amber-500/5 via-transparent to-sky-500/5" corners="all">
+          <GlassCardContent className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500/10 to-amber-600/10 border border-amber-500/20 mb-6">
+              <Globe className="h-8 w-8 text-amber-500" />
+            </div>
+            <h3 className="text-2xl font-medium tracking-tight mb-2">No websites yet</h3>
+            <p className="text-muted-foreground text-center leading-relaxed max-w-sm mb-6">
+              Add a website to start tracking visitors and see analytics.
+            </p>
+            <PrimaryButton asChild size="lg">
+              <Link href="/websites/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Website
+              </Link>
+            </PrimaryButton>
+          </GlassCardContent>
+        </GlassCard>
       </div>
     );
   }
@@ -109,174 +124,121 @@ export default async function AnalyticsPage({
     visitorsByCountry,
     visitorsByCity,
     convertedVisitors,
+    purchaseConversions,
+    couponCopies,
   ] = await Promise.all([
-    // Total visitors
     db.visitor.count({
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+    }),
+    db.visitor.count({
+      where: { websiteId: selectedWebsiteId, firstSeen: { gte: startDate } },
+    }),
+    db.visitor.count({
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate }, visitCount: { gt: 1 } },
+    }),
+    db.event.count({
+      where: { visitor: { websiteId: selectedWebsiteId }, eventType: "POPUP_IMPRESSION", createdAt: { gte: startDate } },
+    }),
+    db.event.count({
+      where: { visitor: { websiteId: selectedWebsiteId }, eventType: "POPUP_CLICK", createdAt: { gte: startDate } },
+    }),
+    db.event.count({
+      where: { visitor: { websiteId: selectedWebsiteId }, eventType: "POPUP_CONVERSION", createdAt: { gte: startDate } },
+    }),
+    db.visitor.groupBy({
+      by: ["intentLevel"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+      _count: true,
+    }),
+    db.visitor.groupBy({
+      by: ["device"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate }, device: { not: null } },
+      _count: true,
+    }),
+    db.visitor.groupBy({
+      by: ["utmSource"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+      _count: true,
+      orderBy: { _count: { utmSource: "desc" } },
+      take: 10,
+    }),
+    db.visitor.findMany({
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+      select: { pagesViewed: true },
+    }),
+    db.visitor.findMany({
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+      orderBy: { lastSeen: "desc" },
+      take: 10,
+    }),
+    db.campaign.findMany({
+      where: { websiteId: selectedWebsiteId },
+    }),
+    db.visitor.aggregate({
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate } },
+      _avg: { scrollDepth: true },
+    }),
+    db.visitor.groupBy({
+      by: ["os"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate }, os: { not: null } },
+      _count: true,
+      orderBy: { _count: { os: "desc" } },
+    }),
+    db.visitor.groupBy({
+      by: ["country"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate }, country: { not: null } },
+      _count: true,
+      orderBy: { _count: { country: "desc" } },
+      take: 10,
+    }),
+    db.visitor.groupBy({
+      by: ["city"],
+      where: { websiteId: selectedWebsiteId, lastSeen: { gte: startDate }, city: { not: null } },
+      _count: true,
+      orderBy: { _count: { city: "desc" } },
+      take: 10,
+    }),
+    db.visitor.findMany({
       where: {
         websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
+        events: { some: { eventType: "POPUP_CONVERSION", createdAt: { gte: startDate } } },
       },
-    }),
-    // New visitors (first seen in period)
-    db.visitor.count({
-      where: {
-        websiteId: selectedWebsiteId,
-        firstSeen: { gte: startDate },
+      include: {
+        events: { orderBy: { createdAt: "asc" }, take: 50, include: { campaign: { select: { name: true } } } },
       },
+      take: 20,
     }),
-    // Returning visitors
-    db.visitor.count({
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-        visitCount: { gt: 1 },
-      },
-    }),
-    // Total impressions
-    db.event.count({
-      where: {
-        visitor: { websiteId: selectedWebsiteId },
-        eventType: "POPUP_IMPRESSION",
-        createdAt: { gte: startDate },
-      },
-    }),
-    // Total clicks
-    db.event.count({
-      where: {
-        visitor: { websiteId: selectedWebsiteId },
-        eventType: "POPUP_CLICK",
-        createdAt: { gte: startDate },
-      },
-    }),
-    // Total conversions
-    db.event.count({
+    // Get purchase conversions for revenue calculation
+    db.event.findMany({
       where: {
         visitor: { websiteId: selectedWebsiteId },
         eventType: "POPUP_CONVERSION",
         createdAt: { gte: startDate },
       },
+      select: { metadata: true, campaignId: true },
     }),
-    // Visitors by intent
-    db.visitor.groupBy({
-      by: ["intentLevel"],
+    // Get coupon copies count
+    db.event.count({
       where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
+        visitor: { websiteId: selectedWebsiteId },
+        eventType: "COUPON_COPY",
+        createdAt: { gte: startDate },
       },
-      _count: true,
-    }),
-    // Visitors by device
-    db.visitor.groupBy({
-      by: ["device"],
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-        device: { not: null },
-      },
-      _count: true,
-    }),
-    // Visitors by source
-    db.visitor.groupBy({
-      by: ["utmSource"],
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-      },
-      _count: true,
-      orderBy: { _count: { utmSource: "desc" } },
-      take: 10,
-    }),
-    // Top pages (also used for bounce rate calculation)
-    db.visitor.findMany({
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-      },
-      select: { pagesViewed: true },
-    }),
-    // Recent visitors
-    db.visitor.findMany({
-      where: {
-        websiteId: selectedWebsiteId,
-      },
-      orderBy: { lastSeen: "desc" },
-      take: 10,
-    }),
-    // Campaign stats
-    db.campaign.findMany({
-      where: {
-        websiteId: selectedWebsiteId,
-      },
-      include: {
-        _count: {
-          select: { events: true },
-        },
-      },
-    }),
-    // Avg scroll depth
-    db.visitor.aggregate({
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-      },
-      _avg: { scrollDepth: true },
-    }),
-    // Visitors by OS
-    db.visitor.groupBy({
-      by: ["os"],
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-        os: { not: null },
-      },
-      _count: true,
-      orderBy: { _count: { os: "desc" } },
-    }),
-    // Top countries
-    db.visitor.groupBy({
-      by: ["country"],
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-        country: { not: null },
-      },
-      _count: true,
-      orderBy: { _count: { country: "desc" } },
-      take: 10,
-    }),
-    // Top cities
-    db.visitor.groupBy({
-      by: ["city"],
-      where: {
-        websiteId: selectedWebsiteId,
-        lastSeen: { gte: startDate },
-        city: { not: null },
-      },
-      _count: true,
-      orderBy: { _count: { city: "desc" } },
-      take: 10,
-    }),
-    // Conversion paths - visitors who converted
-    db.visitor.findMany({
-      where: {
-        websiteId: selectedWebsiteId,
-        events: {
-          some: {
-            eventType: "POPUP_CONVERSION",
-            createdAt: { gte: startDate },
-          },
-        },
-      },
-      include: {
-        events: {
-          orderBy: { createdAt: "asc" },
-          take: 50,
-          include: { campaign: { select: { name: true } } },
-        },
-      },
-      take: 20,
     }),
   ]);
+
+  // Calculate period-filtered event counts for campaigns
+  const campaignStatsWithEvents = await Promise.all(
+    campaignStats.map(async (campaign) => {
+      const eventCount = await db.event.count({
+        where: {
+          campaignId: campaign.id,
+          createdAt: { gte: startDate },
+        },
+      });
+      return { ...campaign, eventCount };
+    })
+  );
 
   // Calculate top pages from visitor data
   const pageCountMap = new Map<string, number>();
@@ -289,16 +251,11 @@ export default async function AnalyticsPage({
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
-  // Calculate conversion rate
-  const conversionRate = totalImpressions > 0
-    ? ((totalConversions / totalImpressions) * 100).toFixed(1)
-    : "0";
-
-  // Bounce rate (visitors with only 1 page viewed)
+  // Calculate rates
+  const conversionRate = totalImpressions > 0 ? ((totalConversions / totalImpressions) * 100).toFixed(1) : "0";
+  const clickRate = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(1) : "0";
   const bouncedCount = topPages.filter((v) => v.pagesViewed.length <= 1).length;
-  const bounceRate = totalVisitors > 0
-    ? ((bouncedCount / totalVisitors) * 100).toFixed(1)
-    : "0";
+  const bounceRate = totalVisitors > 0 ? ((bouncedCount / totalVisitors) * 100).toFixed(1) : "0";
 
   // Intent breakdown
   const intentData = {
@@ -333,10 +290,7 @@ export default async function AnalyticsPage({
     if (existing) {
       existing.count++;
     } else {
-      pathPatternMap.set(key, {
-        count: 1,
-        steps: path.steps.map((s) => s.type),
-      });
+      pathPatternMap.set(key, { count: 1, steps: path.steps.map((s) => s.type) });
     }
   });
   const sortedPatterns = Array.from(pathPatternMap.values())
@@ -344,614 +298,555 @@ export default async function AnalyticsPage({
     .slice(0, 5)
     .map((p) => ({ pattern: p.steps.join(" → "), count: p.count, steps: p.steps }));
 
+  // Calculate revenue from purchase conversions
+  let totalRevenue = 0;
+  let purchaseCount = 0;
+  const couponRevenue = new Map<string, number>();
+
+  purchaseConversions.forEach((event) => {
+    const metadata = event.metadata as Record<string, unknown> | null;
+    if (metadata?.isPurchase) {
+      // Safely parse amount - handle both number and string types
+      const rawAmount = metadata.amount;
+      const amount = typeof rawAmount === "number" ? rawAmount :
+                     typeof rawAmount === "string" ? parseFloat(rawAmount) : NaN;
+
+      // Only count if amount is a valid positive number
+      if (!isNaN(amount) && amount > 0 && isFinite(amount)) {
+        totalRevenue += amount;
+        purchaseCount++;
+
+        // Track revenue by coupon
+        const coupon = metadata.coupon as string | undefined;
+        if (coupon) {
+          couponRevenue.set(coupon, (couponRevenue.get(coupon) || 0) + amount);
+        }
+      }
+    }
+  });
+
+  // Convert from paise to rupees for display
+  const totalRevenueRupees = totalRevenue / 100;
+  const avgOrderValue = purchaseCount > 0 ? totalRevenueRupees / purchaseCount : 0;
+
+  const intentColors: Record<string, { bg: string; bar: string }> = {
+    high: { bg: "from-emerald-500/10 to-emerald-600/5", bar: "bg-emerald-500" },
+    medium: { bg: "from-amber-500/10 to-amber-600/5", bar: "bg-amber-500" },
+    low: { bg: "from-slate-500/10 to-slate-600/5", bar: "bg-slate-400" },
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight">Analytics</h1>
-          <p className="text-xl text-muted-foreground">
-            Track visitor behavior and popup performance
-          </p>
-        </div>
+      <PageHeader
+        title="Analytics"
+        description="Track visitor behavior and popup performance."
+        iconSlot={<BarChart3 className="h-8 w-8 md:h-9 md:w-9 text-amber-500" />}
+        badge="Insights"
+      >
         <div className="flex items-center gap-3">
-          <WebsiteSelector
-            websites={websites}
-            selectedId={selectedWebsiteId}
-            period={period}
-          />
-          <Select defaultValue={period}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="24h">Last 24 hours</SelectItem>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-            </SelectContent>
-          </Select>
+          <BlurFade delay={0.1} direction="up">
+            <WebsiteSelector
+              websites={websites}
+              selectedId={selectedWebsiteId}
+              period={period}
+            />
+          </BlurFade>
+          <BlurFade delay={0.15} direction="up">
+            <PeriodSelector value={period} websiteId={selectedWebsiteId} />
+          </BlurFade>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Overview Stats - Row 1 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Total Visitors</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{totalVisitors.toLocaleString()}</div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="text-green-600 flex items-center">
-                <ArrowUpRight className="h-3 w-3" />
-                {newVisitors} new
-              </span>
-              <span>•</span>
-              <span>{returningVisitors} returning</span>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Total Visitors"
+          value={totalVisitors.toLocaleString()}
+          subtitle={`${newVisitors} new · ${returningVisitors} returning`}
+          iconSlot={<Users className="h-3.5 w-3.5 text-emerald-500" />}
+          gradient="from-emerald-500/10 to-emerald-600/5"
+          delay={0.1}
+        />
+        <StatCard
+          title="Popup Impressions"
+          value={totalImpressions.toLocaleString()}
+          subtitle={`${totalClicks.toLocaleString()} clicks`}
+          iconSlot={<Eye className="h-3.5 w-3.5 text-sky-500" />}
+          gradient="from-sky-500/10 to-sky-600/5"
+          delay={0.15}
+        />
+        <StatCard
+          title="Conversions"
+          value={totalConversions.toLocaleString()}
+          subtitle={`${conversionRate}% conversion rate`}
+          iconSlot={<Target className="h-3.5 w-3.5 text-violet-500" />}
+          gradient="from-violet-500/10 to-violet-600/5"
+          delay={0.2}
+        />
+        <StatCard
+          title="High Intent"
+          value={intentData.high.toLocaleString()}
+          subtitle={`${totalVisitors > 0 ? ((intentData.high / totalVisitors) * 100).toFixed(1) : 0}% of visitors`}
+          iconSlot={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
+          gradient="from-orange-500/10 to-orange-600/5"
+          delay={0.25}
+        />
+      </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Popup Impressions</CardTitle>
-            <Eye className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{totalImpressions.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {totalClicks.toLocaleString()} clicks
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Conversions</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{totalConversions.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {conversionRate}% conversion rate
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">High Intent</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{intentData.high.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {totalVisitors > 0
-                ? ((intentData.high / totalVisitors) * 100).toFixed(1)
-                : 0}% of visitors
-            </p>
-          </CardContent>
-        </Card>
+      {/* Revenue Stats Row */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Revenue"
+          value={`₹${totalRevenueRupees.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
+          subtitle={purchaseCount > 0 ? `${purchaseCount} orders` : "Add conversion tracking"}
+          iconSlot={<IndianRupee className="h-3.5 w-3.5 text-emerald-500" />}
+          gradient="from-emerald-500/10 to-emerald-600/5"
+          delay={0.27}
+        />
+        <StatCard
+          title="Purchases"
+          value={purchaseCount.toLocaleString()}
+          subtitle={purchaseCount > 0 ? `from popup conversions` : "No purchase data yet"}
+          iconSlot={<Target className="h-3.5 w-3.5 text-violet-500" />}
+          gradient="from-violet-500/10 to-violet-600/5"
+          delay={0.28}
+        />
+        <StatCard
+          title="Avg Order Value"
+          value={avgOrderValue > 0 ? `₹${avgOrderValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
+          subtitle={purchaseCount > 0 ? "per converted visitor" : "Track conversions to see"}
+          iconSlot={<TrendingUp className="h-3.5 w-3.5 text-amber-500" />}
+          gradient="from-amber-500/10 to-amber-600/5"
+          delay={0.29}
+        />
+        <StatCard
+          title="Coupon Copies"
+          value={couponCopies.toLocaleString()}
+          subtitle="codes copied from popups"
+          iconSlot={<Copy className="h-3.5 w-3.5 text-sky-500" />}
+          gradient="from-sky-500/10 to-sky-600/5"
+          delay={0.295}
+        />
       </div>
 
       {/* Overview Stats - Row 2 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Avg. Scroll Depth</CardTitle>
-            <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">
-              {(avgScrollDepth._avg.scrollDepth || 0).toFixed(0)}%
-            </div>
-            <div className="mt-1 h-2 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-blue-500 transition-all"
-                style={{ width: `${avgScrollDepth._avg.scrollDepth || 0}%` }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Bounce Rate</CardTitle>
-            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{bounceRate}%</div>
-            <p className="text-xs text-muted-foreground">
-              {bouncedCount.toLocaleString()} single-page visits
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Click Rate</CardTitle>
-            <MousePointerClick className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">
-              {totalImpressions > 0
-                ? ((totalClicks / totalImpressions) * 100).toFixed(1)
-                : "0"}%
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {totalClicks} of {totalImpressions} impressions
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium leading-none">Conversion Paths</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{conversionPaths.length}</div>
-            <p className="text-xs text-muted-foreground">
-              tracked journeys to conversion
-            </p>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Avg. Scroll Depth"
+          value={`${(avgScrollDepth._avg.scrollDepth || 0).toFixed(0)}%`}
+          iconSlot={<ArrowDownRight className="h-3.5 w-3.5 text-sky-500" />}
+          gradient="from-sky-500/10 to-sky-600/5"
+          delay={0.3}
+        />
+        <StatCard
+          title="Bounce Rate"
+          value={`${bounceRate}%`}
+          subtitle={`${bouncedCount.toLocaleString()} single-page visits`}
+          iconSlot={<ArrowUpRight className="h-3.5 w-3.5 text-rose-500" />}
+          gradient="from-rose-500/10 to-rose-600/5"
+          delay={0.35}
+        />
+        <StatCard
+          title="Click Rate"
+          value={`${clickRate}%`}
+          subtitle={`${totalClicks} of ${totalImpressions} impressions`}
+          iconSlot={<MousePointerClick className="h-3.5 w-3.5 text-violet-500" />}
+          gradient="from-violet-500/10 to-violet-600/5"
+          delay={0.4}
+        />
+        <StatCard
+          title="Conversion Paths"
+          value={conversionPaths.length}
+          subtitle="tracked journeys to conversion"
+          iconSlot={<Zap className="h-3.5 w-3.5 text-amber-500" />}
+          gradient="from-amber-500/10 to-amber-600/5"
+          delay={0.45}
+        />
       </div>
 
       {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Intent Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Intent Breakdown</CardTitle>
-            <CardDescription>Visitor engagement levels</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <GlassCard delay={0.5} gradient="from-emerald-500/5 via-transparent to-amber-500/5" corners="top">
+          <GlassCardHeader title="Intent Breakdown" description="Visitor engagement levels" />
+          <GlassCardContent>
             <div className="space-y-4">
               {[
-                { label: "High Intent", value: intentData.high, color: "bg-green-500" },
-                { label: "Medium Intent", value: intentData.medium, color: "bg-yellow-500" },
-                { label: "Low Intent", value: intentData.low, color: "bg-gray-400" },
+                { label: "High Intent", value: intentData.high, key: "high" },
+                { label: "Medium Intent", value: intentData.medium, key: "medium" },
+                { label: "Low Intent", value: intentData.low, key: "low" },
               ].map((item) => (
                 <div key={item.label} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>{item.label}</span>
-                    <span className="font-medium">{item.value.toLocaleString()}</span>
+                    <span className="font-medium">{item.label}</span>
+                    <span className="text-muted-foreground">{item.value.toLocaleString()}</span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden">
                     <div
-                      className={`h-full ${item.color} transition-all`}
-                      style={{
-                        width: `${totalVisitors > 0 ? (item.value / totalVisitors) * 100 : 0}%`,
-                      }}
+                      className={cn("h-full transition-all", intentColors[item.key].bar)}
+                      style={{ width: `${totalVisitors > 0 ? (item.value / totalVisitors) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
 
         {/* Device Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Device Breakdown</CardTitle>
-            <CardDescription>Visitors by device type</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <GlassCard delay={0.55} gradient="from-sky-500/5 via-transparent to-violet-500/5" corners="top">
+          <GlassCardHeader title="Device Breakdown" description="Visitors by device type" />
+          <GlassCardContent>
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col items-center justify-center p-4 bg-muted rounded-lg">
-                <Monitor className="h-8 w-8 mb-2 text-muted-foreground" />
-                <div className="text-3xl font-bold tracking-tight">{deviceData.desktop.toLocaleString()}</div>
+              <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-gradient-to-br from-sky-500/10 to-sky-600/5 border border-sky-500/20">
+                <Monitor className="h-8 w-8 mb-3 text-sky-500" />
+                <div className="text-3xl font-medium tracking-tighter">{deviceData.desktop.toLocaleString()}</div>
                 <p className="text-sm text-muted-foreground">Desktop</p>
               </div>
-              <div className="flex flex-col items-center justify-center p-4 bg-muted rounded-lg">
-                <Smartphone className="h-8 w-8 mb-2 text-muted-foreground" />
-                <div className="text-3xl font-bold tracking-tight">{deviceData.mobile.toLocaleString()}</div>
+              <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-gradient-to-br from-violet-500/10 to-violet-600/5 border border-violet-500/20">
+                <Smartphone className="h-8 w-8 mb-3 text-violet-500" />
+                <div className="text-3xl font-medium tracking-tighter">{deviceData.mobile.toLocaleString()}</div>
                 <p className="text-sm text-muted-foreground">Mobile</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
 
         {/* New vs Returning */}
-        <Card>
-          <CardHeader>
-            <CardTitle>New vs Returning</CardTitle>
-            <CardDescription>Visitor type breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <NewVsReturningChart
-              newCount={newVisitors}
-              returningCount={returningVisitors}
-            />
-          </CardContent>
-        </Card>
+        <GlassCard delay={0.6} gradient="from-violet-500/5 via-transparent to-emerald-500/5" corners="top">
+          <GlassCardHeader title="New vs Returning" description="Visitor type breakdown" />
+          <GlassCardContent>
+            <NewVsReturningChart newCount={newVisitors} returningCount={returningVisitors} />
+          </GlassCardContent>
+        </GlassCard>
       </div>
 
       {/* OS Breakdown */}
       {visitorsByOS.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Laptop className="h-5 w-5" />
-              Operating Systems
-            </CardTitle>
-            <CardDescription>Visitors by OS</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <GlassCard delay={0.65} gradient="from-sky-500/5 via-transparent to-amber-500/5" corners="top">
+          <GlassCardHeader title="Operating Systems" description="Visitors by OS">
+            <Laptop className="h-5 w-5 text-sky-500" />
+          </GlassCardHeader>
+          <GlassCardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-              {visitorsByOS.map((item) => (
-                <div
-                  key={item.os}
-                  className="flex flex-col items-center justify-center p-3 bg-muted rounded-lg"
-                >
-                  <div className="text-lg font-bold tracking-tight">{item._count.toLocaleString()}</div>
-                  <p className="text-sm font-medium leading-none text-muted-foreground">{item.os}</p>
-                </div>
+              {visitorsByOS.map((item, index) => (
+                <BlurFade key={item.os} delay={0.7 + index * 0.03} direction="up">
+                  <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-gradient-to-br from-sky-500/5 to-sky-600/5 border border-border/50 hover:border-sky-500/30 transition-colors">
+                    <div className="text-xl font-medium tracking-tighter">{item._count.toLocaleString()}</div>
+                    <p className="text-sm text-muted-foreground">{item.os}</p>
+                  </div>
+                </BlurFade>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
       )}
 
-      {/* Tables Section */}
-      <Tabs defaultValue="sources" className="space-y-4">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="sources">Traffic Sources</TabsTrigger>
-          <TabsTrigger value="pages">Top Pages</TabsTrigger>
-          <TabsTrigger value="geography">Geography</TabsTrigger>
-          <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-          <TabsTrigger value="conversions">Conversion Paths</TabsTrigger>
-          <TabsTrigger value="visitors">Recent Visitors</TabsTrigger>
-        </TabsList>
+      {/* Tabs Section */}
+      <BlurFade delay={0.75} direction="up">
+        <Tabs defaultValue="sources" className="space-y-4">
+          <TabsList className="flex-wrap bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-1">
+            <TabsTrigger value="sources" className="rounded-lg">Traffic Sources</TabsTrigger>
+            <TabsTrigger value="pages" className="rounded-lg">Top Pages</TabsTrigger>
+            <TabsTrigger value="geography" className="rounded-lg">Geography</TabsTrigger>
+            <TabsTrigger value="campaigns" className="rounded-lg">Campaigns</TabsTrigger>
+            <TabsTrigger value="conversions" className="rounded-lg">Conversion Paths</TabsTrigger>
+            <TabsTrigger value="visitors" className="rounded-lg">Recent Visitors</TabsTrigger>
+          </TabsList>
 
-        {/* Traffic Sources */}
-        <TabsContent value="sources">
-          <Card>
-            <CardHeader>
-              <CardTitle>Traffic Sources</CardTitle>
-              <CardDescription>Where your visitors are coming from</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="text-right">Visitors</TableHead>
-                    <TableHead className="text-right">Percentage</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visitorsBySource.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                        No traffic data yet
-                      </TableCell>
-                    </TableRow>
+          {/* Traffic Sources */}
+          <TabsContent value="sources">
+            <GlassCard delay={0} gradient="from-sky-500/5 via-transparent to-violet-500/5" corners="top">
+              <GlassCardHeader title="Traffic Sources" description="Where your visitors are coming from" />
+              <GlassCardContent>
+                {visitorsBySource.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">No traffic data yet</div>
+                ) : (
+                  <div className="space-y-2">
+                    {visitorsBySource.map((source, index) => (
+                      <div
+                        key={`${source.utmSource || "direct"}-${index}`}
+                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-card hover:border-sky-500/30 transition-all"
+                      >
+                        <span className="font-medium">{source.utmSource || "Direct / None"}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            {totalVisitors > 0 ? ((source._count / totalVisitors) * 100).toFixed(1) : 0}%
+                          </span>
+                          <Badge variant="secondary" className="bg-sky-500/10 text-sky-600">
+                            {source._count}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCardContent>
+            </GlassCard>
+          </TabsContent>
+
+          {/* Top Pages */}
+          <TabsContent value="pages">
+            <GlassCard delay={0} gradient="from-violet-500/5 via-transparent to-emerald-500/5" corners="top">
+              <GlassCardHeader title="Top Pages" description="Most visited pages on your site" />
+              <GlassCardContent>
+                {sortedPages.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">No page data yet</div>
+                ) : (
+                  <div className="space-y-2">
+                    {sortedPages.map(([page, count]) => (
+                      <div
+                        key={page}
+                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-card hover:border-violet-500/30 transition-all"
+                      >
+                        <span className="font-mono text-sm truncate max-w-md" title={page}>{page}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            {totalVisitors > 0 ? ((count / totalVisitors) * 100).toFixed(1) : 0}%
+                          </span>
+                          <Badge variant="secondary" className="bg-violet-500/10 text-violet-600">
+                            {count}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCardContent>
+            </GlassCard>
+          </TabsContent>
+
+          {/* Geography */}
+          <TabsContent value="geography">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <GlassCard delay={0} gradient="from-emerald-500/5 via-transparent to-sky-500/5" corners="top">
+                <GlassCardHeader title="Countries" description="Visitors by country">
+                  <Globe className="h-5 w-5 text-emerald-500" />
+                </GlassCardHeader>
+                <GlassCardContent>
+                  {visitorsByCountry.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Globe className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+                      <p>No country data yet.</p>
+                      <p className="text-sm mt-1">Deploy to Vercel for automatic geo detection.</p>
+                    </div>
                   ) : (
-                    visitorsBySource.map((source) => (
-                      <TableRow key={source.utmSource || "direct"}>
-                        <TableCell className="font-medium">
-                          {source.utmSource || "Direct / None"}
-                        </TableCell>
-                        <TableCell className="text-right">{source._count}</TableCell>
-                        <TableCell className="text-right">
-                          {totalVisitors > 0
-                            ? ((source._count / totalVisitors) * 100).toFixed(1)
-                            : 0}%
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Top Pages */}
-        <TabsContent value="pages">
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Pages</CardTitle>
-              <CardDescription>Most visited pages on your site</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Page</TableHead>
-                    <TableHead className="text-right">Views</TableHead>
-                    <TableHead className="text-right">Percentage</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedPages.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                        No page data yet
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    sortedPages.map(([page, count]) => (
-                      <TableRow key={page}>
-                        <TableCell className="font-medium font-mono text-sm">
-                          {page}
-                        </TableCell>
-                        <TableCell className="text-right">{count}</TableCell>
-                        <TableCell className="text-right">
-                          {totalVisitors > 0
-                            ? ((count / totalVisitors) * 100).toFixed(1)
-                            : 0}%
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Geography */}
-        <TabsContent value="geography">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Globe className="h-5 w-5" />
-                  Top Countries
-                </CardTitle>
-                <CardDescription>Where your visitors are located</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Country</TableHead>
-                      <TableHead className="text-right">Visitors</TableHead>
-                      <TableHead className="text-right">Percentage</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visitorsByCountry.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                          No geo data yet. Deploy to Vercel for automatic country detection.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      visitorsByCountry.map((item) => (
-                        <TableRow key={item.country}>
-                          <TableCell className="font-medium">{item.country}</TableCell>
-                          <TableCell className="text-right">{item._count}</TableCell>
-                          <TableCell className="text-right">
-                            {totalVisitors > 0
-                              ? ((item._count / totalVisitors) * 100).toFixed(1)
-                              : 0}%
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  Top Cities
-                </CardTitle>
-                <CardDescription>City-level breakdown</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>City</TableHead>
-                      <TableHead className="text-right">Visitors</TableHead>
-                      <TableHead className="text-right">Percentage</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visitorsByCity.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                          No city data yet. Deploy to Vercel for automatic city detection.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      visitorsByCity.map((item) => (
-                        <TableRow key={item.city}>
-                          <TableCell className="font-medium">{item.city}</TableCell>
-                          <TableCell className="text-right">{item._count}</TableCell>
-                          <TableCell className="text-right">
-                            {totalVisitors > 0
-                              ? ((item._count / totalVisitors) * 100).toFixed(1)
-                              : 0}%
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Campaigns */}
-        <TabsContent value="campaigns">
-          <Card>
-            <CardHeader>
-              <CardTitle>Campaign Performance</CardTitle>
-              <CardDescription>How your popups are performing</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Events</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaignStats.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        No campaigns yet.{" "}
-                        <Link
-                          href={`/websites/${selectedWebsiteId}/campaigns/new`}
-                          className="text-primary hover:underline"
+                    <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2">
+                      {visitorsByCountry.map((item, index) => (
+                        <div
+                          key={item.country}
+                          className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-background/50 hover:bg-card hover:border-emerald-500/30 transition-all"
                         >
-                          Create one
-                        </Link>
-                      </TableCell>
-                    </TableRow>
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 text-xs font-medium text-emerald-600">
+                            {index + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium truncate" title={item.country || "Unknown"}>{item.country}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-sm text-muted-foreground">
+                                  {totalVisitors > 0 ? ((item._count / totalVisitors) * 100).toFixed(1) : 0}%
+                                </span>
+                                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600">
+                                  {item._count}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="h-1.5 mt-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                                style={{ width: `${totalVisitors > 0 ? (item._count / totalVisitors) * 100 : 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCardContent>
+              </GlassCard>
+
+              <GlassCard delay={0} gradient="from-amber-500/5 via-transparent to-violet-500/5" corners="top">
+                <GlassCardHeader title="Cities" description="Visitors by city">
+                  <MapPin className="h-5 w-5 text-amber-500" />
+                </GlassCardHeader>
+                <GlassCardContent>
+                  {visitorsByCity.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+                      <p>No city data yet.</p>
+                      <p className="text-sm mt-1">Deploy to Vercel for automatic geo detection.</p>
+                    </div>
                   ) : (
-                    campaignStats.map((campaign) => (
-                      <TableRow key={campaign.id}>
-                        <TableCell>
-                          <Link
-                            href={`/websites/${selectedWebsiteId}/campaigns/${campaign.id}`}
-                            className="font-medium hover:underline"
-                          >
+                    <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2">
+                      {visitorsByCity.map((item, index) => (
+                        <div
+                          key={item.city}
+                          className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-background/50 hover:bg-card hover:border-amber-500/30 transition-all"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-600/20 text-xs font-medium text-amber-600">
+                            {index + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium truncate" title={item.city || "Unknown"}>{item.city}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-sm text-muted-foreground">
+                                  {totalVisitors > 0 ? ((item._count / totalVisitors) * 100).toFixed(1) : 0}%
+                                </span>
+                                <Badge variant="secondary" className="bg-amber-500/10 text-amber-600">
+                                  {item._count}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="h-1.5 mt-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
+                                style={{ width: `${totalVisitors > 0 ? (item._count / totalVisitors) * 100 : 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCardContent>
+              </GlassCard>
+            </div>
+          </TabsContent>
+
+          {/* Campaigns */}
+          <TabsContent value="campaigns">
+            <GlassCard delay={0} gradient="from-violet-500/5 via-transparent to-sky-500/5" corners="top">
+              <GlassCardHeader title="Campaign Performance" description="How your popups are performing">
+                {selectedWebsiteId && (
+                  <PrimaryButton asChild size="sm">
+                    <Link href={`/websites/${selectedWebsiteId}/campaigns/new`}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      New Campaign
+                    </Link>
+                  </PrimaryButton>
+                )}
+              </GlassCardHeader>
+              <GlassCardContent>
+                {campaignStatsWithEvents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <p className="text-muted-foreground mb-4">No campaigns yet.</p>
+                    <PrimaryButton asChild>
+                      <Link href={`/websites/${selectedWebsiteId}/campaigns/new`}>Create Campaign</Link>
+                    </PrimaryButton>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {campaignStatsWithEvents.map((campaign) => (
+                      <Link
+                        key={campaign.id}
+                        href={`/websites/${selectedWebsiteId}/campaigns/${campaign.id}`}
+                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-card hover:border-violet-500/30 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium group-hover:text-violet-500 transition-colors">
                             {campaign.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
+                          </span>
                           <Badge
-                            variant={campaign.status === "ACTIVE" ? "default" : "secondary"}
-                            className={
+                            variant="outline"
+                            className={cn(
+                              "text-xs",
                               campaign.status === "ACTIVE"
-                                ? "bg-green-100 text-green-700"
-                                : ""
-                            }
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                : "bg-muted"
+                            )}
                           >
                             {campaign.status}
                           </Badge>
-                        </TableCell>
-                        <TableCell>{campaign.popupType}</TableCell>
-                        <TableCell className="text-right">
-                          {campaign._count.events}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">{campaign.popupType}</span>
+                          <Badge variant="secondary" className="bg-violet-500/10 text-violet-600">
+                            {campaign.eventCount} events
+                          </Badge>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </GlassCardContent>
+            </GlassCard>
+          </TabsContent>
 
-        {/* Conversion Paths */}
-        <TabsContent value="conversions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Conversion Paths</CardTitle>
-              <CardDescription>
-                How visitors journey to conversion through your popups
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ConversionPathView
-                paths={conversionPaths}
-                patterns={sortedPatterns}
+          {/* Conversion Paths */}
+          <TabsContent value="conversions">
+            <GlassCard delay={0} gradient="from-amber-500/5 via-transparent to-emerald-500/5" corners="top">
+              <GlassCardHeader
+                title="Conversion Paths"
+                description="How visitors journey to conversion through your popups"
               />
-            </CardContent>
-          </Card>
-        </TabsContent>
+              <GlassCardContent>
+                <ConversionPathView paths={conversionPaths} patterns={sortedPatterns} />
+              </GlassCardContent>
+            </GlassCard>
+          </TabsContent>
 
-        {/* Recent Visitors */}
-        <TabsContent value="visitors">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Recent Visitors</CardTitle>
-                <CardDescription>Latest visitor activity</CardDescription>
-              </div>
-              <Link
-                href={`/visitors?website=${selectedWebsiteId}`}
-                className="text-sm text-primary hover:underline"
-              >
-                View all →
-              </Link>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Visitor</TableHead>
-                    <TableHead>Intent</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Device</TableHead>
-                    <TableHead className="text-right">Visits</TableHead>
-                    <TableHead className="text-right">Last Seen</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentVisitors.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        No visitors yet. Install the tracking script to start collecting data.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    recentVisitors.map((visitor) => (
-                      <TableRow key={visitor.id}>
-                        <TableCell className="font-mono text-xs">
-                          {visitor.visitorHash.slice(0, 8)}...
-                        </TableCell>
-                        <TableCell>
+          {/* Recent Visitors */}
+          <TabsContent value="visitors">
+            <GlassCard delay={0} gradient="from-emerald-500/5 via-transparent to-violet-500/5" corners="top">
+              <GlassCardHeader title="Recent Visitors" description="Latest visitor activity">
+                <Link
+                  href={`/visitors?website=${selectedWebsiteId}`}
+                  className="text-sm text-sky-500 hover:text-sky-600 transition-colors"
+                >
+                  View all →
+                </Link>
+              </GlassCardHeader>
+              <GlassCardContent>
+                {recentVisitors.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    No visitors yet. Install the tracking script to start collecting data.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {recentVisitors.map((visitor) => (
+                      <div
+                        key={visitor.id}
+                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-card transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                            <Users className="h-4 w-4 text-emerald-500" />
+                          </div>
+                          <div>
+                            <span className="font-mono text-sm">{visitor.visitorHash.slice(0, 12)}...</span>
+                            <p className="text-xs text-muted-foreground">
+                              {visitor.utmSource || "Direct"} · {visitor.device || "-"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
                           <Badge
                             variant="outline"
-                            className={
+                            className={cn(
+                              "text-xs border",
                               visitor.intentLevel === "HIGH"
-                                ? "border-green-500 text-green-700"
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
                                 : visitor.intentLevel === "MEDIUM"
-                                ? "border-yellow-500 text-yellow-700"
-                                : "border-gray-400 text-gray-600"
-                            }
+                                ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                                : "bg-slate-500/10 text-slate-600 border-slate-500/20"
+                            )}
                           >
                             {visitor.intentLevel}
                           </Badge>
-                        </TableCell>
-                        <TableCell>{visitor.utmSource || "Direct"}</TableCell>
-                        <TableCell className="capitalize">{visitor.device || "-"}</TableCell>
-                        <TableCell className="text-right">{visitor.visitCount}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {formatTimeAgo(visitor.lastSeen)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                          <span className="text-sm text-muted-foreground">{formatTimeAgo(visitor.lastSeen)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCardContent>
+            </GlassCard>
+          </TabsContent>
+        </Tabs>
+      </BlurFade>
     </div>
   );
-}
-
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diff = now.getTime() - new Date(date).getTime();
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return new Date(date).toLocaleDateString();
 }

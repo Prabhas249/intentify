@@ -1,47 +1,39 @@
-import { NavBar } from "@/components/landing/ui/navbar"
-import { Hero } from "@/components/landing/ui/hero"
-import Features from "@/components/landing/ui/features"
-import Testimonial from "@/components/landing/ui/testimonial"
-import FeatureDivider from "@/components/landing/ui/feature-divider"
-import { Map } from "@/components/landing/ui/Map/Map"
-import { SolarAnalytics } from "@/components/landing/ui/solar-analytics"
-import { CallToAction } from "@/components/landing/ui/call-to-action"
-import Footer from "@/components/landing/ui/footer"
+import { LazyDither } from "@/components/landing/animations/lazy-dither";
+import { CompanyShowcase } from "@/components/landing/section/company-showcase";
+import { ConnectSection } from "@/components/landing/section/connection-section";
+import { CTASection } from "@/components/landing/section/cta-section";
+import { DemoSection } from "@/components/landing/section/demo-section";
+import { FAQSection } from "@/components/landing/section/faq-section";
+import { FeatureSection } from "@/components/landing/section/feature-section";
+import { Footer } from "@/components/landing/section/footer";
+import { HeroSection } from "@/components/landing/section/hero-section";
+import { Navbar } from "@/components/landing/section/navbar";
+import { PricingSection } from "@/components/landing/section/pricing-section";
+import { TestimonialSection } from "@/components/landing/section/testimonial-section";
+import { WorkflowConnectSection } from "@/components/landing/section/workflow-connect-section";
+import { WorkflowSection } from "@/components/landing/section/workflow-section";
 
 export default function Home() {
   return (
-    <div className="bg-gray-50 selection:bg-orange-100">
-    <NavBar />
-    <main className="relative mx-auto flex flex-col">
-      <div className="pt-56">
-        <Hero />
+    <div className="px-4 lg:px-0 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto border-x border-border">
+        <Navbar />
+        <main className="flex flex-col divide-y divide-border pt-16">
+          <HeroSection />
+          <DemoSection />
+          <CompanyShowcase />
+          <WorkflowSection />
+          <WorkflowConnectSection />
+          <FeatureSection />
+          <ConnectSection />
+          {/* <TestimonialSection /> */}
+          <PricingSection />
+          <FAQSection />
+          <CTASection />
+          <Footer />
+          <LazyDither />
+        </main>
       </div>
-
-      <div className="mt-52 px-4 xl:px-0">
-        <Features />
-      </div>
-
-      <div className="mt-32 px-4 xl:px-0">
-        <Testimonial />
-      </div>
-
-      <FeatureDivider className="my-16 max-w-6xl" />
-
-      <div className="px-4 xl:px-0">
-        <Map />
-      </div>
-
-      <FeatureDivider className="my-16 max-w-6xl" />
-
-      <div className="mt-12 mb-40 px-4 xl:px-0">
-        <SolarAnalytics />
-      </div>
-
-      <div className="mt-10 mb-40 px-4 xl:px-0">
-        <CallToAction />
-      </div>
-    </main>
-    <Footer />
     </div>
-  )
+  );
 }

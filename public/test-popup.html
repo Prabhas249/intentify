@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PopupTool - Dynamic Variables Test</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 40px;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+      color: #a78bfa;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .info-item {
+      background: rgba(0,0,0,0.2);
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .info-label {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    .info-value {
+      font-size: 18px;
+      font-weight: 600;
+      color: #22d3ee;
+    }
+    .btn {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 12px;
+      margin-top: 12px;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid #8b5cf6;
+    }
+    .variables-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .var-tag {
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    #visitor-data {
+      font-family: monospace;
+      font-size: 12px;
+      background: rgba(0,0,0,0.3);
+      padding: 16px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow: auto;
+    }
+    .test-section {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Dynamic Variables Test</h1>
+    <p class="subtitle">Test the visitor memory and personalization system</p>
+
+    <div class="card">
+      <h2>Current Visitor Data</h2>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Visit Count</div>
+          <div class="info-value" id="visit-count">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Pages Viewed</div>
+          <div class="info-value" id="pages-viewed">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Intent Score</div>
+          <div class="info-value" id="intent-score">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Device</div>
+          <div class="info-value" id="device">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Available Dynamic Variables</h2>
+      <p style="color: #888; margin-bottom: 12px;">These can be used in popup headline, subheadline, and body text:</p>
+      <div class="variables-list">
+        <span class="var-tag">{{visitCount}}</span>
+        <span class="var-tag">{{visitOrdinal}}</span>
+        <span class="var-tag">{{lastViewedPage}}</span>
+        <span class="var-tag">{{pagesViewed}}</span>
+        <span class="var-tag">{{timeOnSite}}</span>
+        <span class="var-tag">{{intentLevel}}</span>
+        <span class="var-tag">{{source}}</span>
+        <span class="var-tag">{{device}}</span>
+        <span class="var-tag">{{returnVisitorMessage}}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test Popup Types</h2>
+      <p style="color: #888; margin-bottom: 16px;">Click to test different popup styles:</p>
+      <button class="btn" onclick="showTestPopup('MODAL')">Modal (Center)</button>
+      <button class="btn" onclick="showTestPopup('SLIDE_IN')">Slide-in (Corner)</button>
+      <button class="btn" onclick="showTestPopup('BANNER')">Banner (Top)</button>
+      <button class="btn" onclick="showTestPopup('BOTTOM_SHEET')">Bottom Sheet</button>
+      <button class="btn" onclick="showTestPopup('FULL_SCREEN')">Full Screen</button>
+      <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <button class="btn btn-outline" onclick="clearVisitorData()">Reset Visitor Data</button>
+        <button class="btn btn-outline" onclick="simulateVisit()">Simulate New Visit</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Raw Visitor Data (localStorage)</h2>
+      <div id="visitor-data">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    // Read visitor data from localStorage
+    const STORAGE_KEY = '_pt_visitor';
+
+    function getVisitorData() {
+      try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        return data ? JSON.parse(data) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function updateDisplay() {
+      const visitor = getVisitorData();
+
+      if (visitor) {
+        document.getElementById('visit-count').textContent = visitor.visitCount || 1;
+        document.getElementById('pages-viewed').textContent = visitor.pagesViewed?.length || 0;
+        document.getElementById('intent-score').textContent = calculateIntent(visitor);
+        document.getElementById('device').textContent = visitor.device || 'desktop';
+        document.getElementById('visitor-data').textContent = JSON.stringify(visitor, null, 2);
+      } else {
+        document.getElementById('visit-count').textContent = '1 (new)';
+        document.getElementById('pages-viewed').textContent = '0';
+        document.getElementById('intent-score').textContent = '0';
+        document.getElementById('device').textContent = 'unknown';
+        document.getElementById('visitor-data').textContent = 'No visitor data yet. Refresh the page to create a session.';
+      }
+    }
+
+    function calculateIntent(visitor) {
+      let score = 0;
+      if (visitor.visitCount > 1) score += 10;
+      if (visitor.visitCount > 3) score += 20;
+      if (visitor.pagesViewed?.length > 2) score += 10;
+      return Math.min(score, 100);
+    }
+
+    function getOrdinal(n) {
+      const s = ['th', 'st', 'nd', 'rd'];
+      const v = n % 100;
+      return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    }
+
+    function formatTime(seconds) {
+      if (!seconds || seconds < 60) return `${seconds || 0} seconds`;
+      const mins = Math.round(seconds / 60);
+      return mins === 1 ? '1 minute' : `${mins} minutes`;
+    }
+
+    function showTestPopup(type = 'MODAL') {
+      const visitor = getVisitorData() || { visitCount: 1, pagesViewed: [], totalTimeSeconds: 0 };
+
+      // Replace variables in content
+      let title = "Welcome back for your {{visitOrdinal}} visit!";
+      let text = "You've viewed {{pagesViewed}} pages and spent {{timeOnSite}} with us. Here's 10% off!";
+
+      const variables = {
+        '{{visitCount}}': visitor.visitCount || 1,
+        '{{visitOrdinal}}': getOrdinal(visitor.visitCount || 1),
+        '{{lastViewedPage}}': visitor.pagesViewed?.slice(-2, -1)[0] || '/home',
+        '{{pagesViewed}}': visitor.pagesViewed?.length || 1,
+        '{{timeOnSite}}': formatTime(visitor.totalTimeSeconds || 0),
+        '{{intentLevel}}': calculateIntent(visitor) >= 60 ? 'high' : calculateIntent(visitor) >= 30 ? 'medium' : 'low',
+        '{{source}}': visitor.utmSource || visitor.referrer || 'direct',
+        '{{device}}': visitor.device || 'desktop',
+        '{{returnVisitorMessage}}': visitor.visitCount > 1
+          ? `Welcome back! This is visit #${visitor.visitCount}`
+          : 'Welcome! Thanks for stopping by',
+      };
+
+      for (const [key, value] of Object.entries(variables)) {
+        title = title.split(key).join(String(value));
+        text = text.split(key).join(String(value));
+      }
+
+      // Popup type styles
+      const popupStyles = {
+        MODAL: {
+          overlay: 'background: rgba(0,0,0,0.6); align-items: center; justify-content: center;',
+          popup: 'max-width: 400px; width: 90%; border-radius: 16px; text-align: center; animation: slideUp 0.3s ease;'
+        },
+        SLIDE_IN: {
+          overlay: 'background: transparent; pointer-events: none; align-items: flex-end; justify-content: flex-end;',
+          popup: 'max-width: 280px; margin: 10px; pointer-events: auto; animation: slideFromRight 0.3s ease; padding: 16px; font-size: 14px;'
+        },
+        BANNER: {
+          overlay: 'background: transparent; pointer-events: none; align-items: flex-start;',
+          popup: 'width: 100%; max-width: 100%; border-radius: 0; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; pointer-events: auto; animation: slideFromTop 0.3s ease;'
+        },
+        BOTTOM_SHEET: {
+          overlay: 'background: rgba(0,0,0,0.6); align-items: flex-end;',
+          popup: 'width: 100%; max-width: 100%; border-radius: 16px 16px 0 0; animation: slideFromBottom 0.3s ease;'
+        },
+        FULL_SCREEN: {
+          overlay: 'background: rgba(0,0,0,0.9); align-items: center; justify-content: center;',
+          popup: 'width: 100%; height: 100%; max-width: 100%; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;'
+        }
+      };
+
+      const style = popupStyles[type] || popupStyles.MODAL;
+
+      // Create popup
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        z-index: 999999;
+        animation: fadeIn 0.2s ease;
+        ${style.overlay}
+      `;
+
+      const isBanner = type === 'BANNER';
+
+      overlay.innerHTML = `
+        <div style="
+          background: white;
+          color: #1a1a1a;
+          padding: 32px;
+          position: relative;
+          ${style.popup}
+        ">
+          <button onclick="this.closest('div').parentElement.remove()" style="
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            opacity: 0.5;
+            ${isBanner ? 'position: static; margin-left: auto;' : ''}
+          ">&times;</button>
+          <h2 style="font-size: ${isBanner ? '16px' : '24px'}; margin-bottom: ${isBanner ? '0' : '12px'}; color: #6366f1; ${isBanner ? 'flex: 1;' : ''}">${title}</h2>
+          ${!isBanner ? `<p style="color: #666; margin-bottom: 24px; line-height: 1.6;">${text}</p>` : ''}
+          <button onclick="this.closest('div').parentElement.remove()" style="
+            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+            color: white;
+            border: none;
+            padding: ${isBanner ? '10px 20px' : '14px 32px'};
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: ${isBanner ? '14px' : '16px'};
+            white-space: nowrap;
+          ">Claim My Discount</button>
+        </div>
+      `;
+
+      overlay.onclick = (e) => {
+        if (e.target === overlay && type !== 'SLIDE_IN' && type !== 'BANNER') {
+          overlay.remove();
+        }
+      };
+      document.body.appendChild(overlay);
+    }
+
+    function clearVisitorData() {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('_pt_session');
+      localStorage.removeItem('_pt_shown');
+      sessionStorage.clear();
+      updateDisplay();
+      alert('Visitor data cleared! Refresh to simulate a new visitor.');
+    }
+
+    function simulateVisit() {
+      const visitor = getVisitorData() || {
+        id: 'v_' + Math.random().toString(36).substring(2, 15),
+        visitCount: 0,
+        pagesViewed: [],
+        totalTimeSeconds: 0,
+        firstSeen: new Date().toISOString(),
+      };
+
+      visitor.visitCount += 1;
+      visitor.lastSeen = new Date().toISOString();
+      visitor.totalTimeSeconds += Math.floor(Math.random() * 120) + 30; // Add 30-150 seconds
+
+      // Add a random page
+      const pages = ['/products', '/pricing', '/about', '/contact', '/features', '/demo'];
+      const randomPage = pages[Math.floor(Math.random() * pages.length)];
+      if (!visitor.pagesViewed.includes(randomPage)) {
+        visitor.pagesViewed.push(randomPage);
+      }
+
+      // Simulate device detection
+      visitor.device = /iPhone|iPad|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visitor));
+      updateDisplay();
+    }
+
+    // Initialize
+    updateDisplay();
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes slideFromRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+      @keyframes slideFromTop { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+      @keyframes slideFromBottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    `;
+    document.head.appendChild(style);
+  </script>
+</body>
+</html>

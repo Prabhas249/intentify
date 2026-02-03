@@ -7,13 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,8 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Smartphone, Monitor, MessageCircle } from "lucide-react";
+import { Loader2, Smartphone, Monitor } from "lucide-react";
 import { PopupPreview } from "./popup-preview";
 import { RulesBuilder, type TriggerRule } from "./rules-builder";
 
@@ -33,7 +25,7 @@ interface CampaignEditorProps {
   initialData: CampaignData;
 }
 
-interface CampaignData {
+export interface CampaignData {
   name: string;
   popupType: string;
   content: PopupContent;
@@ -45,7 +37,7 @@ interface CampaignData {
   priority: number;
 }
 
-interface PopupContent {
+export interface PopupContent {
   headline: string;
   subheadline: string;
   body: string;
@@ -93,7 +85,7 @@ const defaultContent: PopupContent = {
 
 export function CampaignEditor({
   campaignId,
-  websiteId,
+  websiteId: _websiteId,
   initialData,
 }: CampaignEditorProps) {
   const router = useRouter();

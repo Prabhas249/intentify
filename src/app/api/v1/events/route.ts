@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { normalizeDomain } from "@/lib/utils";
 
 // CORS headers for cross-origin requests from embed script
 const corsHeaders = {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       scrollDepth,
       email,
       phone,
+      metadata, // For conversion tracking: { amount, orderId, coupon, currency }
     } = body;
 
     // Extract geolocation from Vercel headers (free, zero latency)
@@ -63,12 +65,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate origin (optional - can be strict in production)
+    // Validate origin - check if request comes from registered domain
     const origin = req.headers.get("origin") || "";
     const refererHeader = req.headers.get("referer") || "";
 
-    // In production, validate that request comes from registered domain
-    // For now, we'll be permissive during development
+    // Extract hostname from origin or referer
+    let requestDomain = "";
+    try {
+      if (origin) {
+        requestDomain = new URL(origin).hostname;
+      } else if (refererHeader) {
+        requestDomain = new URL(refererHeader).hostname;
+      }
+    } catch {
+      // Invalid URL, continue without domain check
+    }
+
+    // Check if request domain matches registered website domain
+    const websiteDomain = normalizeDomain(website.domain);
+    const normalizedRequestDomain = normalizeDomain(requestDomain);
+
+    // Validate domain matches (allow localhost for development)
+    const isValidOrigin =
+      !requestDomain || // No origin header (e.g., direct API call)
+      normalizedRequestDomain === websiteDomain ||
+      normalizedRequestDomain === "localhost" ||
+      normalizedRequestDomain.endsWith(".localhost") ||
+      normalizedRequestDomain === "127.0.0.1";
+
+    if (!isValidOrigin) {
+      console.warn(`Origin mismatch: ${requestDomain} vs registered ${websiteDomain}`);
+      // In strict mode, you could reject the request:
+      // return NextResponse.json(
+      //   { error: "Origin not allowed" },
+      //   { status: 403, headers: corsHeaders }
+      // );
+    }
 
     // Get or create visitor
     let visitor = await db.visitor.findUnique({
@@ -104,22 +136,29 @@ export async function POST(req: NextRequest) {
       });
 
       // Check if we should count this visitor for billing
+      // Use atomic updateMany with condition to prevent race conditions
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      if (!visitor.countedForMonth || visitor.countedForMonth < monthStart) {
-        // Increment user's visitor count for the month
+      // Atomically mark visitor as counted only if not already counted this month
+      const updateResult = await db.visitor.updateMany({
+        where: {
+          id: visitor.id,
+          OR: [
+            { countedForMonth: null },
+            { countedForMonth: { lt: monthStart } },
+          ],
+        },
+        data: { countedForMonth: now },
+      });
+
+      // Only increment user count if we successfully marked the visitor
+      if (updateResult.count > 0) {
         await db.user.update({
           where: { id: website.userId },
           data: {
             visitorsUsedThisMonth: { increment: 1 },
           },
-        });
-
-        // Mark visitor as counted
-        await db.visitor.update({
-          where: { id: visitor.id },
-          data: { countedForMonth: now },
         });
       }
     } else {
@@ -127,6 +166,11 @@ export async function POST(req: NextRequest) {
       const updateData: Record<string, unknown> = {
         lastSeen: new Date(),
       };
+
+      // Check if this is a new session (last seen > 30 minutes ago)
+      // Use atomic increment to prevent race conditions
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const isNewSession = visitor.lastSeen < thirtyMinutesAgo;
 
       // Add page to viewed pages if not already there
       if (page && !visitor.pagesViewed.includes(page)) {
@@ -139,9 +183,9 @@ export async function POST(req: NextRequest) {
         updateData.intentLevel = intentLevel?.toUpperCase() || visitor.intentLevel;
       }
 
-      // Update time on site
+      // Update time on site (use increment for atomicity)
       if (timeOnPage) {
-        updateData.timeOnSiteSeconds = visitor.timeOnSiteSeconds + timeOnPage;
+        updateData.timeOnSiteSeconds = { increment: timeOnPage };
       }
 
       // Update UTM if not set
@@ -169,10 +213,21 @@ export async function POST(req: NextRequest) {
         updateData.city = city;
       }
 
-      visitor = await db.visitor.update({
-        where: { id: visitor.id },
-        data: updateData,
-      });
+      // Use separate update for visit count increment to ensure atomicity
+      if (isNewSession) {
+        visitor = await db.visitor.update({
+          where: { id: visitor.id },
+          data: {
+            ...updateData,
+            visitCount: { increment: 1 },
+          },
+        });
+      } else {
+        visitor = await db.visitor.update({
+          where: { id: visitor.id },
+          data: updateData,
+        });
+      }
     }
 
     // Create event record
@@ -183,21 +238,40 @@ export async function POST(req: NextRequest) {
       POPUP_CLICK: "POPUP_CLICK",
       POPUP_CONVERSION: "POPUP_CONVERSION",
       POPUP_DISMISS: "POPUP_DISMISS",
+      PURCHASE_CONVERSION: "POPUP_CONVERSION", // Maps to same type for analytics
+      COUPON_COPY: "COUPON_COPY",
     };
 
     const mappedEventType = eventTypeMap[eventType];
     if (mappedEventType) {
+      // Build metadata object (using Prisma.JsonObject type)
+      const eventMetadata: { [key: string]: string | number | boolean | null } = {
+        page: metadata?.page || page,
+        timeOnPage,
+        scrollDepth,
+        intentScore,
+      };
+
+      // Add conversion-specific metadata
+      if (eventType === "PURCHASE_CONVERSION" && metadata) {
+        eventMetadata.amount = metadata.amount;
+        eventMetadata.orderId = metadata.orderId;
+        eventMetadata.coupon = metadata.coupon;
+        eventMetadata.currency = metadata.currency || "INR";
+        eventMetadata.isPurchase = true; // Flag to distinguish from lead conversions
+      }
+
+      // Add coupon copy metadata
+      if (eventType === "COUPON_COPY" && metadata) {
+        eventMetadata.couponCode = metadata.couponCode;
+      }
+
       await db.event.create({
         data: {
           visitorId: visitor.id,
           campaignId: campaignId || null,
-          eventType: mappedEventType as any,
-          metadata: {
-            page,
-            timeOnPage,
-            scrollDepth,
-            intentScore,
-          },
+          eventType: mappedEventType as "PAGE_VIEW" | "POPUP_IMPRESSION" | "POPUP_CLICK" | "POPUP_CONVERSION" | "POPUP_DISMISS" | "COUPON_COPY",
+          metadata: eventMetadata,
         },
       });
     }

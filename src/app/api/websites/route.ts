@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { nanoid } from "nanoid";
+import { normalizeDomain, getPlanLimits } from "@/lib/utils";
 
 // GET /api/websites - List user's websites
 export async function GET() {
@@ -54,11 +55,7 @@ export async function POST(req: Request) {
     }
 
     // Clean and validate domain
-    const cleanDomain = domain
-      .toLowerCase()
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .replace(/\/$/, "");
+    const cleanDomain = normalizeDomain(domain);
 
     // Check if domain already exists for this user
     const existing = await db.website.findFirst({
@@ -85,18 +82,11 @@ export async function POST(req: Request) {
       },
     });
 
-    const websiteLimits = {
-      FREE: 1,
-      STARTER: 1,
-      GROWTH: 3,
-      PRO: 10,
-    };
+    const limits = getPlanLimits(user?.plan);
 
-    const limit = websiteLimits[user?.plan || "FREE"];
-
-    if (user && user._count.websites >= limit) {
+    if (user && user._count.websites >= limits.websites) {
       return NextResponse.json(
-        { error: `Your plan allows only ${limit} website(s). Please upgrade.` },
+        { error: `Your plan allows only ${limits.websites} website(s). Please upgrade.` },
         { status: 403 }
       );
     }

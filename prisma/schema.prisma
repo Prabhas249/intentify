@@ -1,6 +1,3 @@
-// Prisma Schema for Smart Popup Tool
-// Database: PostgreSQL (Supabase)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,25 +8,20 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ============================================
-// NextAuth.js Models
-// ============================================
-
 model Account {
   id                String  @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -50,79 +42,49 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// ============================================
-// User & Subscription Models
-// ============================================
-
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  company       String?
-
-  // Subscription
-  plan                  Plan      @default(FREE)
+  id                    String         @id @default(cuid())
+  name                  String?
+  email                 String?        @unique
+  emailVerified         DateTime?
+  image                 String?
+  company               String?
+  plan                  Plan           @default(FREE)
   razorpayCustomerId    String?
-  visitorsUsedThisMonth Int       @default(0)
+  visitorsUsedThisMonth Int            @default(0)
   billingCycleStart     DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  accounts      Account[]
-  sessions      Session[]
-  websites      Website[]
-  subscriptions Subscription[]
-}
-
-enum Plan {
-  FREE
-  STARTER
-  GROWTH
-  PRO
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  accounts              Account[]
+  sessions              Session[]
+  subscriptions         Subscription[]
+  websites              Website[]
 }
 
 model Subscription {
-  id                    String   @id @default(cuid())
-  userId                String
-  razorpaySubscriptionId String  @unique
-  plan                  Plan
-  status                SubscriptionStatus
-  currentPeriodStart    DateTime
-  currentPeriodEnd      DateTime
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                     String             @id @default(cuid())
+  userId                 String
+  razorpaySubscriptionId String             @unique
+  plan                   Plan
+  status                 SubscriptionStatus
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
-
-enum SubscriptionStatus {
-  ACTIVE
-  CANCELLED
-  PAST_DUE
-  TRIALING
-}
-
-// ============================================
-// Website & Campaign Models
-// ============================================
 
 model Website {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   userId    String
   domain    String
-  scriptKey String   @unique @default(cuid())
-  settings  Json     @default("{}")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scriptKey String     @unique @default(cuid())
+  settings  Json       @default("{}")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   campaigns Campaign[]
   visitors  Visitor[]
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, domain])
 }
@@ -132,19 +94,88 @@ model Campaign {
   websiteId    String
   name         String
   popupType    PopupType      @default(MODAL)
-  triggerRules Json           // Conditions for showing popup
-  content      Json           // Popup content (title, text, CTA, styles)
+  triggerRules Json
+  content      Json
   status       CampaignStatus @default(ACTIVE)
-  priority     Int            @default(5) // 1-10, higher = more priority
-
-  // Frequency settings
+  priority     Int            @default(5)
   frequency    FrequencyType  @default(ONCE_PER_SESSION)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  website      Website        @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  events       Event[]
+}
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Visitor {
+  id                String      @id @default(cuid())
+  websiteId         String
+  visitorHash       String
+  visitCount        Int         @default(1)
+  pagesViewed       String[]    @default([])
+  timeOnSiteSeconds Int         @default(0)
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  referrer          String?
+  intentScore       Int         @default(0)
+  intentLevel       IntentLevel @default(LOW)
+  scrollDepth       Int         @default(0)
+  device            String?
+  browser           String?
+  os                String?
+  country           String?
+  city              String?
+  firstSeen         DateTime    @default(now())
+  lastSeen          DateTime    @default(now())
+  countedForMonth   DateTime?
+  events            Event[]
+  website           Website     @relation(fields: [websiteId], references: [id], onDelete: Cascade)
 
-  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
-  events  Event[]
+  @@unique([websiteId, visitorHash])
+  @@index([websiteId, lastSeen])
+  @@index([websiteId, intentLevel])
+}
+
+model Event {
+  id         String    @id @default(cuid())
+  campaignId String?
+  visitorId  String
+  eventType  EventType
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+  visitor    Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, eventType])
+  @@index([visitorId, createdAt])
+}
+
+model Lead {
+  id         String   @id @default(cuid())
+  websiteId  String
+  email      String?
+  phone      String?
+  name       String?
+  campaignId String?
+  utmSource  String?
+  pageUrl    String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([websiteId, createdAt])
+}
+
+enum Plan {
+  FREE
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  TRIALING
 }
 
 enum PopupType {
@@ -170,75 +201,10 @@ enum FrequencyType {
   ONCE_EVER
 }
 
-// ============================================
-// Visitor & Analytics Models
-// ============================================
-
-model Visitor {
-  id          String   @id @default(cuid())
-  websiteId   String
-  visitorHash String   // Anonymous identifier (cookie-based)
-
-  // Behavior data
-  visitCount        Int      @default(1)
-  pagesViewed       String[] @default([])
-  timeOnSiteSeconds Int      @default(0)
-
-  // Attribution
-  utmSource   String?
-  utmMedium   String?
-  utmCampaign String?
-  referrer    String?
-
-  // Intent scoring
-  intentScore Int         @default(0) // 0-100
-  intentLevel IntentLevel @default(LOW)
-
-  // Scroll depth (max percentage 0-100)
-  scrollDepth Int @default(0)
-
-  // Device info
-  device      String?
-  browser     String?
-  os          String?
-  country     String?
-  city        String?
-
-  // Timestamps
-  firstSeen DateTime @default(now())
-  lastSeen  DateTime @default(now())
-
-  // For billing - track if counted this month
-  countedForMonth DateTime?
-
-  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
-  events  Event[]
-
-  @@unique([websiteId, visitorHash])
-  @@index([websiteId, lastSeen])
-  @@index([websiteId, intentLevel])
-}
-
 enum IntentLevel {
   LOW
   MEDIUM
   HIGH
-}
-
-model Event {
-  id         String    @id @default(cuid())
-  campaignId String?
-  visitorId  String
-  eventType  EventType
-  metadata   Json?     // Additional event data
-
-  createdAt DateTime @default(now())
-
-  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  visitor  Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId, eventType])
-  @@index([visitorId, createdAt])
 }
 
 enum EventType {
@@ -248,30 +214,5 @@ enum EventType {
   POPUP_CONVERSION
   POPUP_DISMISS
   LEAD_CAPTURED
-}
-
-// ============================================
-// Lead Collection Model
-// ============================================
-
-model Lead {
-  id        String   @id @default(cuid())
-  websiteId String
-
-  // Contact info
-  email     String?
-  phone     String?  // WhatsApp number
-  name      String?
-
-  // Source
-  campaignId String?
-  utmSource  String?
-  pageUrl    String?
-
-  // Metadata
-  metadata  Json?
-
-  createdAt DateTime @default(now())
-
-  @@index([websiteId, createdAt])
+  COUPON_COPY
 }

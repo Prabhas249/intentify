@@ -70,8 +70,8 @@ export async function GET(
         clicks,
         conversions,
         dismissals,
-        ctr: impressions > 0 ? ((clicks / impressions) * 100).toFixed(2) : "0",
-        cvr: impressions > 0 ? ((conversions / impressions) * 100).toFixed(2) : "0",
+        ctr: impressions > 0 ? ((clicks / impressions) * 100).toFixed(1) : "0",
+        cvr: impressions > 0 ? ((conversions / impressions) * 100).toFixed(1) : "0",
       },
     });
   } catch (error) {
@@ -109,6 +109,63 @@ export async function PUT(
       priority,
       status,
     } = body;
+
+    // Validate popupType if provided
+    const validPopupTypes = ["MODAL", "SLIDE_IN", "BANNER", "FLOATING", "FULL_SCREEN", "BOTTOM_SHEET"];
+    if (popupType && !validPopupTypes.includes(popupType)) {
+      return NextResponse.json(
+        { error: `Invalid popup type. Must be one of: ${validPopupTypes.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate frequency if provided
+    const validFrequencies = ["EVERY_TIME", "ONCE_PER_SESSION", "ONCE_PER_DAY", "ONCE_PER_WEEK", "ONCE_EVER"];
+    if (frequency && !validFrequencies.includes(frequency)) {
+      return NextResponse.json(
+        { error: `Invalid frequency. Must be one of: ${validFrequencies.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate priority if provided (1-100)
+    if (priority !== undefined) {
+      const priorityNum = Number(priority);
+      if (isNaN(priorityNum) || priorityNum < 1 || priorityNum > 100) {
+        return NextResponse.json(
+          { error: "Priority must be a number between 1 and 100" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate status if provided
+    const validStatuses = ["ACTIVE", "PAUSED", "ARCHIVED"];
+    if (status && !validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate name length if provided
+    if (name && name.length > 100) {
+      return NextResponse.json(
+        { error: "Campaign name must be less than 100 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Validate CTA link to prevent XSS if provided
+    if (content?.ctaLink) {
+      const ctaLink = String(content.ctaLink).toLowerCase();
+      if (ctaLink.startsWith("javascript:") || ctaLink.startsWith("data:") || ctaLink.startsWith("vbscript:")) {
+        return NextResponse.json(
+          { error: "Invalid CTA link. JavaScript URLs are not allowed." },
+          { status: 400 }
+        );
+      }
+    }
 
     // Verify campaign ownership
     const existing = await db.campaign.findFirst({

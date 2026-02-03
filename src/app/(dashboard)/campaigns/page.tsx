@@ -1,78 +1,85 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { headers } from "next/headers";
+import type { Metadata } from "next";
+
+// Demo user IDs (geo-based)
+const DEMO_USER_INR = "cml66aybb0000yefsjavxkfb5";
+const DEMO_USER_USD = "cml66hzz280fsyefsv71bm5ed";
+
+export const metadata: Metadata = {
+  title: "Campaigns | PopupTool",
+  description: "Manage your popup campaigns across all websites.",
+};
 import {
   Megaphone,
   Plus,
   Eye,
-  MousePointerClick,
   Target,
   Globe,
-  MoreVertical,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { CampaignStatusToggle } from "@/components/campaign/campaign-status-toggle";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { GlassCard, GlassCardContent, GlassCardHeader } from "@/components/dashboard/glass-card";
+import { StatCard } from "@/components/dashboard/stat-card";
+import { PrimaryButton } from "@/components/dashboard/primary-button";
+import { BlurFade } from "@/components/landing/ui/blur-fade";
+import { CampaignRow } from "@/components/dashboard/campaign-row";
+import { CampaignsFilters } from "@/components/campaigns/campaigns-filters";
 
 export default async function AllCampaignsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ website?: string; status?: string }>;
+  searchParams: Promise<{ website?: string; status?: string; period?: string }>;
 }) {
   const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  const headersList = await headers();
+  const country = headersList.get("x-vercel-ip-country") || "US";
+  const isIndia = country === "IN";
+  const demoUserId = isIndia ? DEMO_USER_INR : DEMO_USER_USD;
+  const userId = session?.user?.id || demoUserId;
 
   const params = await searchParams;
+  const period = params.period || "30d";
+
+  // Calculate date range for stats
+  const now = new Date();
+  const periodDays = period === "24h" ? 1 : period === "7d" ? 7 : period === "30d" ? 30 : 90;
+  const startDate = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
 
   // Get user's websites
   const websites = await db.website.findMany({
-    where: { userId: session.user.id },
+    where: { userId: userId },
     orderBy: { createdAt: "desc" },
   });
 
   if (websites.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <Megaphone className="h-12 w-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">No websites yet</h2>
-        <p className="text-muted-foreground mb-4">
-          Add a website first to create campaigns.
-        </p>
-        <Button asChild>
-          <Link href="/websites/new">Add Website</Link>
-        </Button>
+      <div className="space-y-8">
+        <PageHeader
+          title="Campaigns"
+          description="Manage popup campaigns across all your websites."
+          iconSlot={<Megaphone className="h-8 w-8 md:h-9 md:w-9 text-violet-500" />}
+          badge="Overview"
+        />
+        <GlassCard delay={0.1} gradient="from-violet-500/5 via-transparent to-sky-500/5" corners="all">
+          <GlassCardContent className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/10 to-violet-600/10 border border-violet-500/20 mb-6">
+              <Globe className="h-8 w-8 text-violet-500" />
+            </div>
+            <h3 className="text-2xl font-medium tracking-tight mb-2">No websites yet</h3>
+            <p className="text-muted-foreground text-center leading-relaxed max-w-sm mb-6">
+              Add a website first to start creating popup campaigns.
+            </p>
+            <PrimaryButton asChild size="lg">
+              <Link href="/websites/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Website
+              </Link>
+            </PrimaryButton>
+          </GlassCardContent>
+        </GlassCard>
       </div>
     );
   }
@@ -80,7 +87,7 @@ export default async function AllCampaignsPage({
   // Build where clause
   const where: Record<string, unknown> = {
     website: {
-      userId: session.user.id,
+      userId: userId,
     },
   };
 
@@ -106,18 +113,18 @@ export default async function AllCampaignsPage({
     orderBy: [{ status: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
   });
 
-  // Get stats for each campaign
+  // Get stats for each campaign (filtered by period)
   const campaignsWithStats = await Promise.all(
     campaigns.map(async (campaign) => {
       const [impressions, clicks, conversions] = await Promise.all([
         db.event.count({
-          where: { campaignId: campaign.id, eventType: "POPUP_IMPRESSION" },
+          where: { campaignId: campaign.id, eventType: "POPUP_IMPRESSION", createdAt: { gte: startDate } },
         }),
         db.event.count({
-          where: { campaignId: campaign.id, eventType: "POPUP_CLICK" },
+          where: { campaignId: campaign.id, eventType: "POPUP_CLICK", createdAt: { gte: startDate } },
         }),
         db.event.count({
-          where: { campaignId: campaign.id, eventType: "POPUP_CONVERSION" },
+          where: { campaignId: campaign.id, eventType: "POPUP_CONVERSION", createdAt: { gte: startDate } },
         }),
       ]);
 
@@ -154,220 +161,127 @@ export default async function AllCampaignsPage({
     BOTTOM_SHEET: "Bottom Sheet",
   };
 
+  const popupTypeColors: Record<string, string> = {
+    MODAL: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+    SLIDE_IN: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+    BANNER: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    FLOATING: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    FULL_SCREEN: "bg-rose-500/10 text-rose-600 border-rose-500/20",
+    BOTTOM_SHEET: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight flex items-center gap-2">
-            <Megaphone className="h-7 w-7" />
-            All Campaigns
-          </h1>
-          <p className="text-xl text-muted-foreground">
-            Manage popup campaigns across all your websites
-          </p>
-        </div>
+      <PageHeader
+        title="Campaigns"
+        description="Manage popup campaigns across all your websites."
+        iconSlot={<Megaphone className="h-8 w-8 md:h-9 md:w-9 text-violet-500" />}
+        badge="Overview"
+      >
         <div className="flex items-center gap-3">
-          <Select defaultValue={params.website || "all"}>
-            <SelectTrigger className="w-[180px]">
-              <Globe className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="All websites" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Websites</SelectItem>
-              {websites.map((website) => (
-                <SelectItem key={website.id} value={website.id}>
-                  {website.domain}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select defaultValue={params.status || "all"}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="All status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="paused">Paused</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
-            </SelectContent>
-          </Select>
+          <BlurFade delay={0.1} direction="up">
+            <CampaignsFilters
+              websites={websites.map((w) => ({ id: w.id, domain: w.domain }))}
+              selectedWebsite={params.website || "all"}
+              selectedStatus={params.status || "all"}
+              selectedPeriod={period}
+            />
+          </BlurFade>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium leading-none text-muted-foreground">
-              Total Campaigns
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{campaigns.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {activeCampaigns} active
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium leading-none text-muted-foreground flex items-center gap-1">
-              <Eye className="h-3 w-3" /> Impressions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{totalImpressions.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium leading-none text-muted-foreground flex items-center gap-1">
-              <Target className="h-3 w-3" /> Conversions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{totalConversions.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium leading-none text-muted-foreground">
-              Avg. CVR
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight">
-              {totalImpressions > 0
-                ? ((totalConversions / totalImpressions) * 100).toFixed(1)
-                : "0"}
-              %
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Total Campaigns"
+          value={campaigns.length}
+          subtitle={`${activeCampaigns} active`}
+          iconSlot={<Megaphone className="h-3.5 w-3.5 text-violet-500" />}
+          gradient="from-violet-500/10 to-violet-600/5"
+          delay={0.1}
+        />
+        <StatCard
+          title="Impressions"
+          value={totalImpressions.toLocaleString()}
+          iconSlot={<Eye className="h-3.5 w-3.5 text-sky-500" />}
+          gradient="from-sky-500/10 to-sky-600/5"
+          delay={0.15}
+        />
+        <StatCard
+          title="Conversions"
+          value={totalConversions.toLocaleString()}
+          iconSlot={<Target className="h-3.5 w-3.5 text-emerald-500" />}
+          gradient="from-emerald-500/10 to-emerald-600/5"
+          delay={0.2}
+        />
+        <StatCard
+          title="Avg. CVR"
+          value={`${totalImpressions > 0
+            ? ((totalConversions / totalImpressions) * 100).toFixed(1)
+            : "0"}%`}
+          iconSlot={<TrendingUp className="h-3.5 w-3.5 text-amber-500" />}
+          gradient="from-amber-500/10 to-amber-600/5"
+          delay={0.25}
+        />
       </div>
 
-      {/* Campaigns Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Campaigns</CardTitle>
-          <CardDescription>
-            {campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""} found
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Campaigns List */}
+      <GlassCard delay={0.3} gradient="from-violet-500/5 via-transparent to-sky-500/5" corners="top">
+        <GlassCardHeader
+          title="All Campaigns"
+          description={`${campaigns.length} campaign${campaigns.length !== 1 ? "s" : ""} found`}
+        >
+          {websites.length > 0 && (
+            <PrimaryButton asChild size="sm">
+              <Link href={`/websites/${websites[0].id}/campaigns/new`}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Campaign
+              </Link>
+            </PrimaryButton>
+          )}
+        </GlassCardHeader>
+        <GlassCardContent>
           {campaignsWithStats.length === 0 ? (
-            <div className="text-center py-12">
-              <Megaphone className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-2xl font-semibold tracking-tight mb-2">No campaigns yet</h3>
-              <p className="text-muted-foreground mb-4">
+            <div className="flex flex-col items-center justify-center py-16 px-6">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/10 to-violet-600/10 border border-violet-500/20 mb-6">
+                <Megaphone className="h-8 w-8 text-violet-500" />
+              </div>
+              <h3 className="text-2xl font-medium tracking-tight mb-2">No campaigns yet</h3>
+              <p className="text-muted-foreground text-center leading-relaxed max-w-sm mb-6">
                 Create your first popup campaign to start converting visitors.
               </p>
-              <Button asChild>
+              <PrimaryButton asChild size="lg">
                 <Link href={`/websites/${websites[0].id}/campaigns/new`}>
                   <Plus className="mr-2 h-4 w-4" />
                   Create Campaign
                 </Link>
-              </Button>
+              </PrimaryButton>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Website</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Impressions</TableHead>
-                  <TableHead className="text-right">Conversions</TableHead>
-                  <TableHead className="text-right">CVR</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaignsWithStats.map((campaign) => (
-                  <TableRow key={campaign.id}>
-                    <TableCell>
-                      <Link
-                        href={`/websites/${campaign.websiteId}/campaigns/${campaign.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {campaign.name}
-                      </Link>
-                      <p className="text-xs text-muted-foreground">
-                        Priority: {campaign.priority}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/websites/${campaign.websiteId}`}
-                        className="text-sm hover:underline"
-                      >
-                        {campaign.website.domain}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {popupTypeLabels[campaign.popupType]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <CampaignStatusToggle
-                        campaignId={campaign.id}
-                        status={campaign.status}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {campaign.stats.impressions.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {campaign.stats.conversions.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant="secondary"
-                        className={
-                          parseFloat(campaign.stats.cvr) >= 5
-                            ? "bg-green-100 text-green-700"
-                            : parseFloat(campaign.stats.cvr) >= 2
-                            ? "bg-yellow-100 text-yellow-700"
-                            : ""
-                        }
-                      >
-                        {campaign.stats.cvr}%
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href={`/websites/${campaign.websiteId}/campaigns/${campaign.id}`}
-                            >
-                              Edit Campaign
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/websites/${campaign.websiteId}/campaigns`}>
-                              View Website Campaigns
-                            </Link>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="space-y-3">
+              {campaignsWithStats.map((campaign, index) => (
+                <BlurFade key={campaign.id} delay={0.35 + index * 0.03} direction="up">
+                  <CampaignRow
+                    campaign={{
+                      id: campaign.id,
+                      name: campaign.name,
+                      websiteId: campaign.websiteId,
+                      popupType: campaign.popupType,
+                      status: campaign.status,
+                      priority: campaign.priority,
+                      website: campaign.website,
+                      stats: campaign.stats,
+                    }}
+                    popupTypeLabels={popupTypeLabels}
+                    popupTypeColors={popupTypeColors}
+                  />
+                </BlurFade>
+              ))}
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </GlassCardContent>
+      </GlassCard>
     </div>
   );
 }

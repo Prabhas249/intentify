@@ -60,12 +60,12 @@ Score 61+    = HIGH   (ready to buy)
 ## Tech Stack
 
 ```
-Frontend:     Next.js 14 + TypeScript + Tailwind CSS
+Frontend:     Next.js 16 + TypeScript + Tailwind CSS v4
 UI:           shadcn/ui dashboard components
 Backend:      Next.js API Routes + Prisma ORM
 Database:     PostgreSQL (Supabase)
-Auth:         NextAuth.js (Google, Email)
-Payments:     Razorpay
+Auth:         NextAuth.js v5 (Google, Email)
+Payments:     Dodo Payments (MoR, global)
 Hosting:      Vercel
 Rate Limit:   Upstash Redis
 ```
@@ -104,16 +104,47 @@ subscriptions:
 
 ---
 
-## Pricing Tiers
+## Pricing Tiers (Geo-Based)
 
-| Plan | Price | Visitors/mo | Popups | Features |
-|------|-------|-------------|--------|----------|
-| Free | ₹0 | 1,000 | 1 | Basic popup, Limited analytics |
-| Starter | ₹999/mo | 10,000 | 3 | Full customization, Email support |
-| Growth | ₹2,499/mo | 50,000 | 10 | + WhatsApp, A/B testing |
-| Pro | ₹4,999/mo | 200,000 | Unlimited | + Priority support, API access |
+**Scale-based pricing - All features included in every plan**
+
+### India (INR)
+| Plan | Price | Visitors/mo | Websites | Key Limits |
+|------|-------|-------------|----------|------------|
+| Free | ₹0 | 2,000 | 1 | 3 popups, Intentify branding |
+| Starter | ₹999/mo | 15,000 | 2 | 10 popups, No branding |
+| Growth | ₹2,499/mo | 75,000 | 5 | Unlimited popups, Team (3) |
+| Pro | ₹4,999/mo | 250,000 | 10 | Unlimited, Team (10), Slack |
+
+### International (USD)
+| Plan | Price | Visitors/mo | Websites | Key Limits |
+|------|-------|-------------|----------|------------|
+| Free | $0 | 2,000 | 1 | 3 popups, Branding |
+| Starter | $19/mo | 15,000 | 2 | 10 popups |
+| Growth | $49/mo | 75,000 | 5 | Unlimited, Team (3) |
+| Pro | $99/mo | 250,000 | 10 | Unlimited, Team (10) |
 
 **Annual:** 17% discount (2 months free)
+
+**Pricing Philosophy:** No feature gating. Pay only for scale (visitors/month).
+All plans include: All popup types, visitor memory, intent scoring, WhatsApp, analytics.
+
+---
+
+## Payment Integration
+
+**Provider:** Dodo Payments (https://dodopayments.com)
+- Merchant of Record - handles global tax compliance
+- 150+ countries, 80+ currencies
+- FEMA compliant for India
+- Subscription billing built-in
+- Fee: 4% + 40¢ (USD) or 4% + ₹4 (INR)
+
+**Implementation:**
+1. Detect country via Vercel `x-vercel-ip-country` header
+2. Show INR pricing for India, USD for rest of world
+3. Create separate price IDs in Dodo for INR/USD variants
+4. Redirect to appropriate Dodo checkout based on country
 
 ---
 

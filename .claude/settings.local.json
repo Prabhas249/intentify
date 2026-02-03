@@ -3,7 +3,11 @@
     "allow": [
       "Bash(find:*)",
       "Bash(npx prisma generate:*)",
-      "Bash(npx prisma db push:*)"
+      "Bash(npx prisma db push:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(dir:*)",
+      "Bash(npm run dev:*)",
+      "WebFetch(domain:www.promptmonitor.io)"
     ]
   }
 }

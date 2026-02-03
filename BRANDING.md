@@ -1,13 +1,13 @@
-# PopupGo - Brand Guidelines
+# Intentify - Brand Guidelines
 
-> Brand identity and design system for PopupGo - Smart Popups for Indian D2C Brands
+> Brand identity and design system for Intentify - Smart Popups for Indian D2C Brands
 
 ---
 
 ## Brand Identity
 
 ### Name
-**PopupGo** (stylized as `PopupGo` or `Popup Go`)
+**Intentify** (stylized as `Intentify` or `Popup Go`)
 
 ### Tagline Options
 - "Smart Popups. Real Conversions."
@@ -72,7 +72,7 @@ India's first smart popup tool with visitor memory - affordable, lightweight, Wh
 ## Logo
 
 ### Primary Logo
-Text-based logo: **PopupGo** with stylized "Go" in orange
+Text-based logo: **Intentify** with stylized "Go" in orange
 
 ### Logo Mark
 Stylized popup window icon with arrow/cursor

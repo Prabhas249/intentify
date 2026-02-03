@@ -28,13 +28,23 @@ import {
   Loader2,
   Smartphone,
   Monitor,
-  Plus,
-  Trash2,
   Sparkles,
-  MessageCircle,
+  Zap,
+  Copy,
+  Check,
+  Users,
+  UserPlus,
+  UserCheck,
+  Flame,
+  Instagram,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Settings2,
 } from "lucide-react";
 import { PopupPreview } from "./popup-preview";
 import { RulesBuilder, type TriggerRule } from "./rules-builder";
+import { GlassCard, GlassCardHeader, GlassCardContent } from "@/components/dashboard/glass-card";
 
 interface CampaignBuilderProps {
   websiteId: string;
@@ -63,6 +73,8 @@ interface PopupContent {
   whatsappNumber: string;
   whatsappMessage: string;
   imageUrl: string;
+  showCoupon: boolean;
+  couponCode: string;
   showEmailField: boolean;
   showPhoneField: boolean;
   emailPlaceholder: string;
@@ -86,6 +98,8 @@ const defaultContent: PopupContent = {
   whatsappNumber: "",
   whatsappMessage: "Hi! I'm interested in your products.",
   imageUrl: "",
+  showCoupon: false,
+  couponCode: "",
   showEmailField: true,
   showPhoneField: false,
   emailPlaceholder: "Enter your email",
@@ -124,6 +138,113 @@ export function CampaignBuilder({
   const [campaign, setCampaign] = useState<CampaignData>(
     initialData || defaultCampaign
   );
+  const [copiedVar, setCopiedVar] = useState<string | null>(null);
+  const [showAdvancedRules, setShowAdvancedRules] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string>("everyone");
+
+  // Simple presets that auto-generate rules
+  const audiencePresets = [
+    {
+      id: "everyone",
+      label: "Everyone",
+      description: "Show to all visitors",
+      icon: Users,
+      rules: [],
+    },
+    {
+      id: "new_visitors",
+      label: "New Visitors",
+      description: "First time on your site",
+      icon: UserPlus,
+      rules: [{ field: "visitCount", operator: "equals", value: "1" }],
+    },
+    {
+      id: "return_visitors",
+      label: "Return Visitors",
+      description: "Came back 2+ times",
+      icon: UserCheck,
+      rules: [{ field: "visitCount", operator: "greater_than", value: "1" }],
+    },
+    {
+      id: "high_intent",
+      label: "High Intent",
+      description: "Ready to buy (score 60+)",
+      icon: Flame,
+      rules: [{ field: "intentLevel", operator: "equals", value: "high" }],
+    },
+    {
+      id: "from_instagram",
+      label: "From Instagram",
+      description: "Clicked your IG link",
+      icon: Instagram,
+      rules: [{ field: "utmSource", operator: "contains", value: "instagram" }],
+    },
+    {
+      id: "from_google",
+      label: "From Google",
+      description: "Found you via search",
+      icon: Search,
+      rules: [{ field: "referrer", operator: "contains", value: "google" }],
+    },
+    {
+      id: "mobile_users",
+      label: "Mobile Users",
+      description: "On phone or tablet",
+      icon: Smartphone,
+      rules: [{ field: "device", operator: "equals", value: "mobile" }],
+    },
+  ];
+
+  const handlePresetSelect = (presetId: string) => {
+    setSelectedPreset(presetId);
+    const preset = audiencePresets.find((p) => p.id === presetId);
+    if (preset) {
+      updateCampaign("triggerRules", {
+        conditions: preset.rules as TriggerRule[],
+        operator: "AND" as const,
+      });
+    }
+  };
+
+  const dynamicVariables = [
+    { var: "{{visitCount}}", desc: "Total visits", example: "3", sampleUse: "You've visited us 3 times!" },
+    { var: "{{visitOrdinal}}", desc: "Visit number", example: "3rd", sampleUse: "Welcome back for your 3rd visit!" },
+    { var: "{{pagesViewed}}", desc: "Pages seen", example: "5", sampleUse: "You've explored 5 pages" },
+    { var: "{{timeOnSite}}", desc: "Time spent", example: "2 min", sampleUse: "Thanks for spending 2 minutes!" },
+    { var: "{{source}}", desc: "Traffic source", example: "instagram", sampleUse: "Special offer for instagram visitors!" },
+    { var: "{{device}}", desc: "Device type", example: "mobile", sampleUse: "On mobile? Get our app!" },
+    { var: "{{intentLevel}}", desc: "Buyer intent", example: "high", sampleUse: "Interest level: high" },
+    { var: "{{returnVisitorMessage}}", desc: "Auto greeting", example: "Welcome back!", sampleUse: "Welcome back! This is visit #3" },
+  ];
+
+  const exampleTexts = [
+    {
+      label: "Return Visitor",
+      headline: "Welcome back for your {{visitOrdinal}} visit!",
+      subheadline: "We saved your cart. Here's 10% off to complete your order.",
+    },
+    {
+      label: "Engaged Visitor",
+      headline: "You've viewed {{pagesViewed}} pages!",
+      subheadline: "Looks like you found something you love. Here's free shipping!",
+    },
+    {
+      label: "Time Spender",
+      headline: "Thanks for spending {{timeOnSite}} with us!",
+      subheadline: "Here's a special reward for browsing - 15% off today only.",
+    },
+    {
+      label: "New Visitor",
+      headline: "Welcome! First time here?",
+      subheadline: "Sign up now and get 10% off your first order.",
+    },
+  ];
+
+  const copyVariable = (varName: string) => {
+    navigator.clipboard.writeText(varName);
+    setCopiedVar(varName);
+    setTimeout(() => setCopiedVar(null), 2000);
+  };
 
   const updateCampaign = (field: keyof CampaignData, value: unknown) => {
     setCampaign((prev) => ({ ...prev, [field]: value }));
@@ -174,7 +295,7 @@ export function CampaignBuilder({
         throw new Error(error.message || "Failed to create campaign");
       }
 
-      const data = await response.json();
+      await response.json();
       router.push(`/websites/${websiteId}/campaigns`);
       router.refresh();
     } catch (error) {
@@ -349,11 +470,162 @@ export function CampaignBuilder({
               </CardContent>
             </Card>
 
+            {/* Dynamic Variables Card - Glassmorphism Style */}
+            <GlassCard gradient="from-violet-500/5 via-transparent to-sky-500/5" corners="top">
+              <GlassCardHeader
+                title="Personalization Magic ✨"
+                description="Make every popup feel personal. Click templates to use, or copy variables."
+                icon={<Zap className="h-5 w-5 text-violet-500" />}
+              />
+              <GlassCardContent className="space-y-5">
+                {/* Quick Templates */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">Quick Templates</p>
+                  <div className="grid gap-2">
+                    {exampleTexts.map((ex, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-xl border border-border/50 bg-background/50 hover:bg-violet-500/5 hover:border-violet-500/30 transition-all cursor-pointer group"
+                        onClick={() => {
+                          updateContent("headline", ex.headline);
+                          updateContent("subheadline", ex.subheadline);
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-violet-600">{ex.label}</span>
+                          <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">Click to use →</span>
+                        </div>
+                        <p className="text-sm font-medium">{ex.headline}</p>
+                        <p className="text-xs text-muted-foreground">{ex.subheadline}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Variables Table */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">Available Variables</p>
+                  <div className="rounded-xl border border-border/50 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-muted/30 border-b border-border/50">
+                          <th className="text-left p-3 font-medium text-xs text-muted-foreground">Variable</th>
+                          <th className="text-left p-3 font-medium text-xs text-muted-foreground">Output</th>
+                          <th className="text-left p-3 font-medium text-xs text-muted-foreground hidden sm:table-cell">Example Usage</th>
+                          <th className="w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dynamicVariables.map((v, i) => (
+                          <tr
+                            key={v.var}
+                            className={`border-b border-border/30 last:border-0 hover:bg-violet-500/5 transition-colors group ${i % 2 === 0 ? 'bg-background/30' : 'bg-background/50'}`}
+                          >
+                            <td className="p-3">
+                              <code className="text-xs font-mono text-violet-600 bg-violet-500/10 px-1.5 py-0.5 rounded">
+                                {v.var}
+                              </code>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-xs text-sky-600 font-medium">{v.example}</span>
+                            </td>
+                            <td className="p-3 hidden sm:table-cell">
+                              <span className="text-xs text-muted-foreground italic">&ldquo;{v.sampleUse}&rdquo;</span>
+                            </td>
+                            <td className="p-3">
+                              <button
+                                className="p-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
+                                onClick={() => copyVariable(v.var)}
+                                title="Copy variable"
+                              >
+                                {copiedVar === v.var ? (
+                                  <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-violet-500 transition-colors" />
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </GlassCardContent>
+            </GlassCard>
+
+            {/* Tip: Content vs Rules */}
+            <div className="flex gap-3 p-4 rounded-xl border border-sky-500/20 bg-sky-500/5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/20">
+                <Sparkles className="h-4 w-4 text-sky-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Content vs Rules</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <strong>Content</strong> = What the popup says (personalizes text for everyone who sees it).
+                  <br />
+                  <strong>Rules</strong> = Who sees the popup (filters which visitors get it).
+                  <br />
+                  <span className="text-sky-600">Use both together for targeted + personalized popups!</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Coupon Code */}
             <Card>
               <CardHeader>
-                <CardTitle>Lead Capture</CardTitle>
+                <CardTitle>Discount Coupon</CardTitle>
                 <CardDescription>
-                  Collect visitor information.
+                  Show a coupon code visitors can copy.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Show Coupon Code</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Display a copyable discount code
+                    </p>
+                  </div>
+                  <Switch
+                    checked={campaign.content.showCoupon}
+                    onCheckedChange={(v) => updateContent("showCoupon", v)}
+                  />
+                </div>
+
+                {campaign.content.showCoupon && (
+                  <>
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-xs text-amber-700">
+                        <strong>Note:</strong> Create this coupon in your store first (Shopify, WooCommerce, etc.).
+                        We display the code - your store validates it at checkout.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Coupon Code</Label>
+                      <Input
+                        placeholder="e.g., SAVE10, WELCOME20"
+                        value={campaign.content.couponCode || ""}
+                        onChange={(e) =>
+                          updateContent("couponCode", e.target.value.toUpperCase())
+                        }
+                        className="font-mono text-lg tracking-wider"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Visitors will see this code with a copy button
+                      </p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Lead Capture */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Lead Capture (Optional)</CardTitle>
+                <CardDescription>
+                  Collect visitor information before showing coupon.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -642,29 +914,107 @@ export function CampaignBuilder({
           <TabsContent value="rules" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Trigger Rules</CardTitle>
+                <CardTitle>Who should see this popup?</CardTitle>
                 <CardDescription>
-                  Define when this popup should appear. Leave empty to show to
-                  everyone.
+                  Choose your target audience. We&apos;ll handle the technical stuff.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <RulesBuilder
-                  rules={campaign.triggerRules.conditions}
-                  operator={campaign.triggerRules.operator}
-                  onRulesChange={(rules) =>
-                    updateCampaign("triggerRules", {
-                      ...campaign.triggerRules,
-                      conditions: rules,
-                    })
-                  }
-                  onOperatorChange={(op) =>
-                    updateCampaign("triggerRules", {
-                      ...campaign.triggerRules,
-                      operator: op,
-                    })
-                  }
-                />
+              <CardContent className="space-y-4">
+                {/* Simple Presets Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  {audiencePresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                        selectedPreset === preset.id
+                          ? "border-violet-500 bg-violet-500/5"
+                          : "border-border/50 hover:border-violet-500/50 hover:bg-muted/50"
+                      }`}
+                      onClick={() => handlePresetSelect(preset.id)}
+                    >
+                      {selectedPreset === preset.id && (
+                        <div className="absolute top-2 right-2">
+                          <Check className="h-4 w-4 text-violet-500" />
+                        </div>
+                      )}
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl mb-3 ${
+                        selectedPreset === preset.id
+                          ? "bg-violet-500/20"
+                          : "bg-muted"
+                      }`}>
+                        <preset.icon className={`h-5 w-5 ${
+                          selectedPreset === preset.id
+                            ? "text-violet-500"
+                            : "text-muted-foreground"
+                        }`} />
+                      </div>
+                      <p className="font-medium text-sm">{preset.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {preset.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Advanced Toggle */}
+                <div className="pt-4 border-t">
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setShowAdvancedRules(!showAdvancedRules)}
+                  >
+                    <Settings2 className="h-4 w-4" />
+                    <span>Advanced Rules</span>
+                    {showAdvancedRules ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </button>
+
+                  {showAdvancedRules && (
+                    <div className="mt-4 p-4 rounded-xl border border-border/50 bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Build custom rules for power users. This overrides the preset above.
+                      </p>
+                      <RulesBuilder
+                        rules={campaign.triggerRules.conditions}
+                        operator={campaign.triggerRules.operator}
+                        onRulesChange={(rules) => {
+                          setSelectedPreset(""); // Clear preset when manually editing
+                          updateCampaign("triggerRules", {
+                            ...campaign.triggerRules,
+                            conditions: rules,
+                          });
+                        }}
+                        onOperatorChange={(op) =>
+                          updateCampaign("triggerRules", {
+                            ...campaign.triggerRules,
+                            operator: op,
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Intent Score Explanation */}
+            <Card className="border-amber-500/20 bg-amber-500/5">
+              <CardContent className="pt-4">
+                <div className="flex gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+                    <Flame className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">How &ldquo;High Intent&rdquo; works</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      We auto-calculate a 0-100 score based on: return visits, time spent,
+                      pages viewed, scroll depth, and if they viewed pricing. Score 60+ = High Intent.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

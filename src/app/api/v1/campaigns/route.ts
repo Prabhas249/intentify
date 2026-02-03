@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getPlanLimits } from "@/lib/utils";
 
 // CORS headers
 const corsHeaders = {
@@ -59,14 +60,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Check plan limits
-    const planLimits = {
-      FREE: { visitors: 1000, popups: 1 },
-      STARTER: { visitors: 10000, popups: 3 },
-      GROWTH: { visitors: 50000, popups: 10 },
-      PRO: { visitors: 200000, popups: Infinity },
-    };
-
-    const limits = planLimits[website.user.plan];
+    const limits = getPlanLimits(website.user.plan);
     const usedVisitors = website.user.visitorsUsedThisMonth;
 
     // If over 120% of limit, don't show popups (hard stop)
@@ -78,7 +72,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Limit number of active campaigns by plan
-    const activeCampaigns = website.campaigns.slice(0, limits.popups);
+    const campaignLimit = limits.campaigns === Infinity ? website.campaigns.length : limits.campaigns;
+    const activeCampaigns = website.campaigns.slice(0, campaignLimit);
 
     // Filter campaigns based on trigger rules
     const matchingCampaigns = activeCampaigns.filter((campaign) => {

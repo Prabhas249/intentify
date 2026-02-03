@@ -98,7 +98,9 @@
 ### Days 17-18: Landing Page & Onboarding
 | Task | Status | Notes |
 |------|--------|-------|
-| Marketing landing page | Done | Full page with 10 sections |
+| Marketing landing page | Done | Full page with 11 sections |
+| Landing page content customization | Done | Intentify branding, INR pricing, D2C testimonials |
+| Landing page build fixes | Done | Import paths, missing packages, client directives |
 | User onboarding flow | Not Started | |
 | Script installation guide | Done | In website detail page |
 | Settings page | Not Started | |
@@ -110,8 +112,11 @@
 | Script performance (<5KB, <50ms) | Not Started | |
 | Cross-browser testing | Not Started | |
 | Mobile popup testing | Not Started | |
-| Security review (XSS, CSRF) | Not Started | |
+| Security review (XSS, CSRF) | Done | Auth bypass, XSS prevention, input validation |
 | Rate limiting setup | Not Started | Upstash Redis |
+| Dashboard bug audit | Done | All critical bugs fixed |
+| TypeScript errors | Done | 0 errors |
+| ESLint errors | Done | 0 errors |
 
 ### Day 21: Launch Prep
 | Task | Status | Notes |
@@ -129,9 +134,16 @@
 |------|-------|--------|
 | Week 1 | Core Engine & Tracking | Done (Days 1-7 complete) |
 | Week 2 | Popup System & Dashboard | Done (Campaign UI + Analytics complete) |
-| Week 3 | Integrations & Launch | In Progress (Landing page done) |
+| Week 3 | Integrations & Launch | In Progress (Landing page + Bug fixes done) |
 
-**Overall Progress:** ~88% complete (Core tracking + popup engine + dashboard UI + analytics + landing page + advanced analytics done)
+**Overall Progress:** ~95% MVP complete
+- ✅ Core tracking + popup engine
+- ✅ Dashboard UI + analytics
+- ✅ Landing page (Intentify branded)
+- ✅ All critical bugs fixed
+- ✅ Security review complete
+- ⏳ Razorpay billing (next)
+- ⏳ Rate limiting (next)
 
 ---
 
@@ -197,13 +209,81 @@
 - [x] **FAQ with shadcn Accordion**
 - [x] **Mobile responsive navbar**
 
+- [x] **Landing page content customized for Intentify**
+- [x] **Intentify branding throughout**
+- [x] **INR pricing (₹0, ₹2,499, ₹4,999)**
+- [x] **13 D2C-focused Indian testimonials**
+- [x] **India-specific FAQ (visitor memory, intent scoring, WhatsApp, INR)**
+- [x] **Hero section with D2C messaging**
+- [x] **Feature section (Visitor Memory, Intent Scoring, UTM, WhatsApp)**
+- [x] **Bento section (Builder, Targeting, Analytics, Performance)**
+- [x] **Quote section with Indian brand**
+- [x] **CTA section with free account signup**
+- [x] **Footer with Intentify links**
+
+### Session 7 - Bug Fixes & Security (Jan 31, 2026)
+- [x] **Authorization bypass fix** - Explicit session checks on all pages
+- [x] **Race condition fix** - Atomic Prisma operations for visitor counting
+- [x] **Campaign PUT validation** - Full input validation added
+- [x] **XSS prevention** - Blocks javascript:/data:/vbscript: URLs
+- [x] **Priority display fix** - Changed "/10" to "/100"
+- [x] **CTR/CVR consistency** - Standardized to .toFixed(1)
+- [x] **Centralized plan limits** - PLAN_LIMITS config in utils.ts
+- [x] **Safe metadata parsing** - Handles number/string types
+- [x] **TypeScript 0 errors**
+- [x] **ESLint 0 errors**
+- [x] **Build passes**
+- [x] **Dashboard MVP complete**
+
+### Session 8 - Landing Page Animations (Feb 2, 2026)
+- [x] **Visitor Feed animation** - Live visitor cards with intent scores
+- [x] **Terminal Browser Preview** - Script setup flow animation
+- [x] **Rule Builder animation** - Targeting rules → Match → Popup slides in
+- [x] **Conversion Journey animation** - First visit → Return → Converted flow
+- [x] **Logo updated** - CodeForge → Intentify (dashboard + landing)
+- [x] **Single-play animations** - All use `once: true`, no replay on scroll
+- [x] **Consistent spring transitions** - stiffness: 100, damping: 20
+
+### Session 9 - Demo Mode & Payments Planning (Feb 2, 2026 Evening)
+- [x] **Public demo dashboard** - No login required, uses demo user fallback
+- [x] **Embedded dashboard in landing** - Live iframe in demo section
+- [x] **UI fixes** - Dropdowns, stat cards, text truncation
+- [x] **Auth removed** - All dashboard pages accessible without login
+- [x] **Geo-based pricing decided** - INR for India, USD for international
+- [x] **Dodo Payments chosen** - Merchant of Record, global support
+- [x] **Product naming discussed** - Top picks: Nudge, Intentify, Pulsepop
+
+### Landing Page Status (Feb 2, 2026)
+**✅ DONE:**
+- Logo & branding (Intentify)
+- Hero section
+- Workflow section (Terminal + Visitor Feed animations)
+- WorkflowConnect section (Rule Builder + Conversion Journey animations)
+- Demo section (embedded live dashboard iframe)
+- Pricing section (scale-based, no feature gating)
+- FAQ section (10 Intentify-specific questions)
+- Testimonials hidden (commented out for later)
+
+**❌ LEFT:**
+- Nav submenu (update to Intentify features)
+- Company logos (remove or add real)
+- Final branding/naming once domain chosen
+
+### Session 10 - Revenue Projections (Feb 2, 2026 Night)
+- [x] **Revenue projections created** - REVENUE-PROJECTIONS.md
+- [x] **3 scenarios analyzed** - Pessimistic (18-24mo), Realistic (10-14mo), Optimistic (5-8mo)
+- [x] **Target defined** - $6,000 USD MRR (~₹5,00,000/month)
+- [x] **Customer requirements calculated** - 120-240 customers depending on ARPU
+- [x] **Marketing plan documented** - Reddit, Twitter, Cold DMs, SEO
+- [x] **Profit margins projected** - 95% at target (~₹4.73L/month net)
+
 ## Next Priority
-1. Set up Supabase database (see TODO.md)
-2. Set up Google OAuth
-3. Run `npx prisma db push`
-4. Razorpay billing integration
-5. WhatsApp popup types
-6. User onboarding flow
+1. **Finalize product name** - Get domain (Nudge or Intentify)
+2. **Set up Dodo Payments** - Create account, products, prices
+3. **Implement geo-pricing** - Detect country, show INR/USD
+4. **Add auth flow** - Google + Email login
+5. **Connect checkout** - Dodo checkout links
+6. **Handle webhooks** - Subscription events from Dodo
 
 ---
 

@@ -19,6 +19,75 @@
 
   // Configuration
   const API_BASE = scriptTag?.src?.replace('/embed/tracker.js', '') || '';
+
+  // ============================================
+  // Global API for Conversion Tracking
+  // ============================================
+
+  // Create global _pt object for brands to call
+  window._pt = window._pt || {};
+
+  /**
+   * Track a conversion (call this on thank-you/order-confirmation page)
+   * @param {Object} data - Conversion data
+   * @param {number} data.amount - Order amount in smallest currency unit (paise/cents)
+   * @param {string} data.orderId - Order ID from store
+   * @param {string} data.coupon - Coupon code used (optional)
+   * @param {string} data.currency - Currency code (default: INR)
+   */
+  window._pt.convert = function(data = {}) {
+    const visitorId = getVisitorIdForConversion();
+
+    if (!visitorId) {
+      console.warn('[PopupTool] No visitor ID found for conversion tracking');
+      return;
+    }
+
+    // Send conversion event
+    fetch(`${API_BASE}/api/v1/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scriptKey: SCRIPT_KEY,
+        eventType: 'PURCHASE_CONVERSION',
+        visitorId: visitorId,
+        metadata: {
+          amount: data.amount || 0,
+          orderId: data.orderId || null,
+          coupon: data.coupon || null,
+          currency: data.currency || 'INR',
+          page: window.location.pathname,
+          timestamp: new Date().toISOString()
+        }
+      })
+    }).then(() => {
+      console.log('[PopupTool] Conversion tracked successfully');
+    }).catch((err) => {
+      console.warn('[PopupTool] Failed to track conversion:', err.message);
+    });
+  };
+
+  // Helper to get visitor ID for conversion tracking
+  function getVisitorIdForConversion() {
+    // Try cookie first
+    const cookieValue = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('_pt_visitor='))
+      ?.split('=')[1];
+
+    if (cookieValue) return cookieValue;
+
+    // Fallback to localStorage
+    try {
+      const stored = localStorage.getItem('_pt_visitor');
+      if (stored) {
+        const data = JSON.parse(stored);
+        return data?.id;
+      }
+    } catch {}
+
+    return null;
+  }
   const STORAGE_KEY = '_pt_visitor';
   const SESSION_KEY = '_pt_session';
   const SHOWN_POPUPS_KEY = '_pt_shown';
@@ -360,7 +429,28 @@
     }
   }
 
-  function createPopupElement(campaign, visitorId) {
+  function getPopupClass(popupType) {
+    const classes = {
+      'MODAL': '',
+      'SLIDE_IN': 'slide-in',
+      'BANNER': 'banner',
+      'FLOATING': 'floating',
+      'BOTTOM_SHEET': 'bottom-sheet',
+      'FULL_SCREEN': 'full-screen'
+    };
+    return classes[popupType] || '';
+  }
+
+  function getOverlayClass(popupType) {
+    const classes = {
+      'SLIDE_IN': 'slide-in-overlay',
+      'BANNER': 'banner-overlay',
+      'FLOATING': 'floating-overlay'
+    };
+    return classes[popupType] || '';
+  }
+
+  function createPopupElement(campaign, visitorId, visitor, currentPage) {
     // Create container with Shadow DOM for style isolation
     const container = document.createElement('div');
     container.id = `pt-popup-${campaign.id}`;
@@ -369,6 +459,11 @@
 
     const content = campaign.content || {};
     const styles = content.styles || {};
+
+    // Replace dynamic variables in content
+    const processedTitle = replaceVariables(content.title, visitor, currentPage);
+    const processedText = replaceVariables(content.text, visitor, currentPage);
+    const processedCtaText = replaceVariables(content.ctaText, visitor, currentPage);
 
     // Default styles
     const bgColor = styles.backgroundColor || '#ffffff';
@@ -420,6 +515,133 @@
           width: 100%;
           border-radius: 16px 16px 0 0;
           animation: pt-slideFromBottom 0.3s ease;
+        }
+
+        /* Slide-in: corner popup */
+        .pt-popup.slide-in {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          left: auto;
+          top: auto;
+          max-width: 340px;
+          width: calc(100% - 40px);
+          animation: pt-slideFromRight 0.3s ease;
+        }
+
+        .pt-overlay.slide-in-overlay {
+          background: transparent;
+          pointer-events: none;
+        }
+
+        .pt-overlay.slide-in-overlay .pt-popup {
+          pointer-events: auto;
+        }
+
+        /* Banner: top or bottom bar */
+        .pt-popup.banner {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: auto;
+          max-width: 100%;
+          width: 100%;
+          border-radius: 0;
+          padding: 16px 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          animation: pt-slideFromTop 0.3s ease;
+        }
+
+        .pt-popup.banner .pt-title {
+          margin-bottom: 0;
+          font-size: 16px;
+        }
+
+        .pt-popup.banner .pt-text {
+          margin-bottom: 0;
+          display: none;
+        }
+
+        .pt-popup.banner .pt-cta {
+          width: auto;
+          white-space: nowrap;
+        }
+
+        .pt-overlay.banner-overlay {
+          background: transparent;
+          pointer-events: none;
+          align-items: flex-start;
+        }
+
+        .pt-overlay.banner-overlay .pt-popup {
+          pointer-events: auto;
+        }
+
+        /* Floating button */
+        .pt-popup.floating {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          left: auto;
+          top: auto;
+          max-width: 60px;
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          padding: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: pt-bounceIn 0.4s ease;
+          cursor: pointer;
+        }
+
+        .pt-popup.floating .pt-title,
+        .pt-popup.floating .pt-text,
+        .pt-popup.floating .pt-close,
+        .pt-popup.floating .pt-cta,
+        .pt-popup.floating .pt-input {
+          display: none;
+        }
+
+        .pt-popup.floating::before {
+          content: "💬";
+          font-size: 28px;
+        }
+
+        .pt-overlay.floating-overlay {
+          background: transparent;
+          pointer-events: none;
+        }
+
+        .pt-overlay.floating-overlay .pt-popup {
+          pointer-events: auto;
+        }
+
+        /* Full screen */
+        .pt-popup.full-screen {
+          max-width: 100%;
+          width: 100%;
+          height: 100%;
+          border-radius: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .pt-popup.full-screen .pt-title {
+          font-size: 28px;
+        }
+
+        .pt-popup.full-screen .pt-cta {
+          width: auto;
+          min-width: 200px;
         }
 
         .pt-close {
@@ -498,6 +720,54 @@
           border-color: ${buttonColor};
         }
 
+        .pt-coupon {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: rgba(0,0,0,0.05);
+          border: 2px dashed rgba(0,0,0,0.2);
+          border-radius: 8px;
+          padding: 12px 16px;
+          margin-bottom: 16px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .pt-coupon:hover {
+          border-color: ${buttonColor};
+          background: rgba(0,0,0,0.08);
+        }
+
+        .pt-coupon-code {
+          font-family: monospace;
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: 2px;
+          color: ${textColor};
+        }
+
+        .pt-coupon-copy {
+          font-size: 12px;
+          color: ${buttonColor};
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .pt-coupon-copy svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .pt-coupon.copied {
+          border-color: #22c55e;
+          background: rgba(34, 197, 94, 0.1);
+        }
+
+        .pt-coupon.copied .pt-coupon-copy {
+          color: #22c55e;
+        }
+
         @keyframes pt-fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -513,26 +783,99 @@
           to { transform: translateY(0); }
         }
 
+        @keyframes pt-slideFromRight {
+          from { opacity: 0; transform: translateX(100%); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes pt-slideFromTop {
+          from { transform: translateY(-100%); }
+          to { transform: translateY(0); }
+        }
+
+        @keyframes pt-bounceIn {
+          0% { opacity: 0; transform: scale(0.3); }
+          50% { transform: scale(1.05); }
+          70% { transform: scale(0.9); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+
         @media (max-width: 480px) {
-          .pt-popup:not(.bottom-sheet) {
+          .pt-popup:not(.bottom-sheet):not(.banner):not(.floating):not(.full-screen) {
             width: 95%;
             padding: 20px;
+          }
+
+          /* Slide-in stays small corner popup on mobile */
+          .pt-popup.slide-in {
+            bottom: 10px;
+            right: 10px;
+            left: auto !important;
+            max-width: 280px;
+            width: calc(100vw - 20px);
+            border-radius: 12px;
+            padding: 14px;
+            animation: pt-slideFromRight 0.3s ease;
+          }
+
+          .pt-popup.slide-in .pt-title {
+            font-size: 15px;
+            margin-bottom: 4px;
+          }
+
+          .pt-popup.slide-in .pt-text {
+            font-size: 12px;
+            margin-bottom: 12px;
+          }
+
+          .pt-popup.slide-in .pt-cta {
+            padding: 10px 16px;
+            font-size: 13px;
+          }
+
+          .pt-popup.slide-in .pt-close {
+            font-size: 20px;
+            top: 8px;
+            right: 8px;
+          }
+
+          /* Banner gets smaller padding on mobile */
+          .pt-popup.banner {
+            padding: 12px 16px;
+            flex-wrap: wrap;
+          }
+
+          .pt-popup.banner .pt-cta {
+            width: 100%;
+            margin-top: 8px;
           }
         }
       </style>
 
-      <div class="pt-overlay">
-        <div class="pt-popup ${campaign.popupType === 'BOTTOM_SHEET' ? 'bottom-sheet' : ''}">
+      <div class="pt-overlay ${getOverlayClass(campaign.popupType)}">
+        <div class="pt-popup ${getPopupClass(campaign.popupType)}">
           <button class="pt-close" aria-label="Close">&times;</button>
-          <h2 class="pt-title">${escapeHtml(content.title || 'Special Offer!')}</h2>
-          <p class="pt-text">${escapeHtml(content.text || '')}</p>
+          <h2 class="pt-title">${escapeHtml(processedTitle || 'Special Offer!')}</h2>
+          <p class="pt-text">${escapeHtml(processedText || '')}</p>
+          ${content.couponCode ? `
+            <div class="pt-coupon" id="pt-coupon-${campaign.id}" data-code="${escapeHtml(content.couponCode)}">
+              <span class="pt-coupon-code">${escapeHtml(content.couponCode)}</span>
+              <span class="pt-coupon-copy">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span class="pt-copy-text">Copy</span>
+              </span>
+            </div>
+          ` : ''}
           ${content.collectEmail ? `
             <input type="email" class="pt-input" placeholder="Enter your email" id="pt-email-${campaign.id}">
           ` : ''}
           ${content.collectPhone ? `
             <input type="tel" class="pt-input" placeholder="Enter your WhatsApp number" id="pt-phone-${campaign.id}">
           ` : ''}
-          <button class="pt-cta">${escapeHtml(content.ctaText || 'Get Offer')}</button>
+          <button class="pt-cta">${escapeHtml(processedCtaText || 'Get Offer')}</button>
           ${content.secondaryCtaText ? `
             <button class="pt-cta pt-secondary">${escapeHtml(content.secondaryCtaText)}</button>
           ` : ''}
@@ -565,6 +908,34 @@
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closePopup('dismiss');
     });
+
+    // Coupon copy handler
+    const couponEl = shadow.querySelector(`#pt-coupon-${campaign.id}`);
+    if (couponEl) {
+      couponEl.addEventListener('click', () => {
+        const code = couponEl.dataset.code;
+        navigator.clipboard.writeText(code).then(() => {
+          couponEl.classList.add('copied');
+          const copyText = couponEl.querySelector('.pt-copy-text');
+          if (copyText) copyText.textContent = 'Copied!';
+
+          // Track coupon copy event
+          sendEvent('COUPON_COPY', {
+            visitorId,
+            campaignId: campaign.id,
+            metadata: {
+              couponCode: code,
+              page: window.location.pathname
+            }
+          });
+
+          setTimeout(() => {
+            couponEl.classList.remove('copied');
+            if (copyText) copyText.textContent = 'Copy';
+          }, 2000);
+        });
+      });
+    }
 
     ctaBtn.addEventListener('click', () => {
       // Collect lead data if applicable
@@ -615,14 +986,77 @@
     return div.innerHTML;
   }
 
-  function showPopup(campaign, visitorId) {
+  // ============================================
+  // Dynamic Variable Replacement
+  // ============================================
+
+  function replaceVariables(text, visitor, currentPage) {
+    if (!text) return text;
+
+    const variables = {
+      // Visit data
+      '{{visitCount}}': visitor.visitCount || 1,
+      '{{visits}}': visitor.visitCount || 1,
+
+      // Pages
+      '{{currentPage}}': currentPage,
+      '{{lastViewedPage}}': visitor.pagesViewed?.slice(-2, -1)[0] || currentPage,
+      '{{pagesViewed}}': visitor.pagesViewed?.length || 1,
+
+      // Time
+      '{{timeOnSite}}': formatTime(visitor.totalTimeSeconds || 0),
+      '{{timeOnSiteMinutes}}': Math.round((visitor.totalTimeSeconds || 0) / 60),
+
+      // Intent
+      '{{intentScore}}': visitor.intentScore || 0,
+      '{{intentLevel}}': visitor.intentLevel || 'new',
+
+      // Source (show friendly name, skip if direct)
+      '{{source}}': visitor.utmSource || (visitor.referrer && visitor.referrer !== 'direct' ? visitor.referrer : ''),
+      '{{utmSource}}': visitor.utmSource || '',
+      '{{utmCampaign}}': visitor.utmCampaign || '',
+      '{{referrer}}': visitor.referrer || 'direct',
+
+      // Device
+      '{{device}}': visitor.device || 'desktop',
+
+      // Personalized messages based on visit count
+      '{{returnVisitorMessage}}': visitor.visitCount > 1
+        ? `Welcome back! This is visit #${visitor.visitCount}`
+        : 'Welcome! Thanks for stopping by',
+
+      // Ordinal visit (1st, 2nd, 3rd, etc.)
+      '{{visitOrdinal}}': getOrdinal(visitor.visitCount || 1),
+    };
+
+    let result = text;
+    for (const [key, value] of Object.entries(variables)) {
+      result = result.split(key).join(String(value));
+    }
+
+    return result;
+  }
+
+  function formatTime(seconds) {
+    if (seconds < 60) return `${seconds} seconds`;
+    const mins = Math.round(seconds / 60);
+    return mins === 1 ? '1 minute' : `${mins} minutes`;
+  }
+
+  function getOrdinal(n) {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function showPopup(campaign, visitorId, visitor, currentPage) {
     // Track impression
     sendEvent('POPUP_IMPRESSION', {
       visitorId,
       campaignId: campaign.id
     });
 
-    const popup = createPopupElement(campaign, visitorId);
+    const popup = createPopupElement(campaign, visitorId, visitor, currentPage);
     document.body.appendChild(popup);
   }
 
@@ -714,7 +1148,10 @@
 
       // Show highest priority campaign
       if (eligibleCampaigns.length > 0) {
-        showPopup(eligibleCampaigns[0], visitor.id);
+        // Add computed values to visitor for variable replacement
+        visitor.intentScore = intentScore;
+        visitor.intentLevel = getIntentLevel(intentScore);
+        showPopup(eligibleCampaigns[0], visitor.id, visitor, currentPage);
       }
     }, 2000); // 2 second delay before showing popup
 
