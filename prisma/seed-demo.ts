@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, IntentLevel } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -210,7 +210,7 @@ async function seedDataForUser(userId: string, currency: "INR" | "USD") {
         const device = weightedRandom(devices);
         const visitCount = Math.floor(Math.random() * 8) + 1;
         const intentScore = Math.floor(Math.random() * 100);
-        const intentLevel = intentScore >= 60 ? "HIGH" : intentScore >= 30 ? "MEDIUM" : "LOW";
+        const intentLevel: IntentLevel = intentScore >= 60 ? IntentLevel.HIGH : intentScore >= 30 ? IntentLevel.MEDIUM : IntentLevel.LOW;
 
         const visitorId = `v_${config.domain.split(".")[0]}_${currency}_${i}_${Math.random().toString(36).substring(2, 6)}`;
 
