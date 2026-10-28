@@ -9,14 +9,16 @@ import { Footer } from "@/components/landing/section/footer";
 import { HeroSection } from "@/components/landing/section/hero-section";
 import { Navbar } from "@/components/landing/section/navbar";
 import { PricingSection } from "@/components/landing/section/pricing-section";
+import { SideDecor } from "@/components/landing/section/side-decor";
 import { TestimonialSection } from "@/components/landing/section/testimonial-section";
 import { WorkflowConnectSection } from "@/components/landing/section/workflow-connect-section";
 import { WorkflowSection } from "@/components/landing/section/workflow-section";
 
 export default function Home() {
   return (
-    <div className="px-4 lg:px-0 overflow-x-hidden">
-      <div className="max-w-7xl mx-auto border-x border-border">
+    <div className="relative px-4 lg:px-0 overflow-x-hidden">
+      <SideDecor />
+      <div className="relative z-10 max-w-7xl mx-auto bg-background border-x border-border">
         <Navbar />
         <main className="flex flex-col divide-y divide-border pt-16">
           <HeroSection />

@@ -106,28 +106,18 @@ subscriptions:
 
 ## Pricing Tiers (Geo-Based)
 
-**Scale-based pricing - All features included in every plan**
+> 📌 **Canonical pricing lives in [PRICING.md](./PRICING.md).** That file wins over this summary.
+> Billing metric = **Tracked Visitors / month**. Marketers see **Campaigns**, not "popups".
 
-### India (INR)
-| Plan | Price | Visitors/mo | Websites | Key Limits |
-|------|-------|-------------|----------|------------|
-| Free | ₹0 | 2,000 | 1 | 3 popups, Intentify branding |
-| Starter | ₹999/mo | 15,000 | 2 | 10 popups, No branding |
-| Growth | ₹2,499/mo | 75,000 | 5 | Unlimited popups, Team (3) |
-| Pro | ₹4,999/mo | 250,000 | 10 | Unlimited, Team (10), Slack |
+| Plan | India | Intl | Tracked Visitors/mo | Campaigns | Sites |
+|------|-------|------|---------------------|-----------|-------|
+| Free | ₹0 | $0 | 3,000 | 3 | 1 |
+| Starter | ₹1,999 | $24 | 20,000 | 10 | 2 |
+| Growth ⭐ | ₹3,999 | $49 | 75,000 | Unlimited | 5 |
+| Pro | ₹7,999 | $99 | 250,000 | Unlimited | 10 |
+| Enterprise | Custom | Custom | 250k+ | Unlimited | Unlimited |
 
-### International (USD)
-| Plan | Price | Visitors/mo | Websites | Key Limits |
-|------|-------|-------------|----------|------------|
-| Free | $0 | 2,000 | 1 | 3 popups, Branding |
-| Starter | $19/mo | 15,000 | 2 | 10 popups |
-| Growth | $49/mo | 75,000 | 5 | Unlimited, Team (3) |
-| Pro | $99/mo | 250,000 | 10 | Unlimited, Team (10) |
-
-**Annual:** 17% discount (2 months free)
-
-**Pricing Philosophy:** No feature gating. Pay only for scale (visitors/month).
-All plans include: All popup types, visitor memory, intent scoring, WhatsApp, analytics.
+**Annual:** ~17% discount (2 months free). **Philosophy:** price on value (one extra sale pays it back), not cheapness. See PRICING.md for full feature-per-tier breakdown + the built-vs-roadmap honesty ledger.
 
 ---
 

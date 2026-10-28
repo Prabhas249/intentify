@@ -18,10 +18,14 @@ async function main() {
   console.log("Seeding database...\n");
 
   // 1. Find or create the dev user
+  // Fixed ID = the USD demo-user fallback the dashboard pages use when not logged in,
+  // so the public /dashboard shows this seeded data on localhost with no login.
+  const DEMO_USER_ID = "cml66hzz280fsyefsv71bm5ed";
   let user = await db.user.findUnique({ where: { email: "admin@popup.dev" } });
   if (!user) {
     user = await db.user.create({
       data: {
+        id: DEMO_USER_ID,
         name: "Admin",
         email: "admin@popup.dev",
         plan: "STARTER",

@@ -44,3 +44,6 @@ next-env.d.ts
 
 .vercel
 nul
+
+# local embedded postgres data
+pgdata/
